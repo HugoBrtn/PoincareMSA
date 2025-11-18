@@ -8,16 +8,16 @@ import numpy as np
 from sklearn.cluster import *
 # import scanpy.api as sc
 
-from scripts.build_poincare_map.model import poincare_translation
+from model import poincare_translation
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 from sklearn.decomposition import PCA
 
-from scripts.build_poincare_map.visualize import *
-from scripts.build_poincare_map.model import *
+from visualize import *
+from model import *
 import seaborn as sns; sns.set()
 import torch as th
-from scripts.build_poincare_map.coldict import *
+from coldict import *
 from scipy.spatial.distance import euclidean
 
 
@@ -134,22 +134,22 @@ def plotPoincareDisc(
     ax.axis('off')
     ax.axis('equal') 
 
-    if print_labels:
-        if labels_text is None:
-            labels_list = np.unique(labels)
-        else:
-            labels_list = np.unique(labels_text)
-        if labels_pos is None:  
-            labels_pos = {}  
-            for l in labels_list:
-        #         i = np.random.choice(np.where(labels == l)[0])
-                ix_l = np.where(labels == l)[0]
-                Dl = poincare_distance(th.DoubleTensor(x[ix_l, :])).numpy()
-                i = ix_l[np.argmin(Dl.sum(axis=0))]
-                labels_pos[l] = i
+    # if print_labels:
+    #     if labels_text is None:
+    #         labels_list = np.unique(labels)
+    #     else:
+    #         labels_list = np.unique(labels_text)
+    #     if labels_pos is None:  
+    #         labels_pos = {}  
+    #         for l in labels_list:
+    #     #         i = np.random.choice(np.where(labels == l)[0])
+    #             ix_l = np.where(labels == l)[0]
+    #             Dl = poincare_distance(th.DoubleTensor(x[ix_l, :])).numpy()
+    #             i = ix_l[np.argmin(Dl.sum(axis=0))]
+    #             labels_pos[l] = i
 
-        for l in labels_list:    
-            ax.text(x[labels_pos[l], 0], x[labels_pos[l], 1], l, fontsize=fs)
+    #     for l in labels_list:    
+    #         ax.text(x[labels_pos[l], 0], x[labels_pos[l], 1], l, fontsize=fs)
 
     ax.set_ylim([-1.01, 1.01])
     ax.set_xlim([-1.01, 1.01]) 
