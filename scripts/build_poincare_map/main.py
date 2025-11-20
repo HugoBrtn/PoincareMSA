@@ -325,45 +325,49 @@ def poincare_map_w_custom_distance(opt):
     set_seed(opt.seed)
 #    torch.manual_seed(opt.seed)
 
-    # Features assignment only if a precomputed distance matrix is not provided
-    if opt.distance_matrix is None and opt.plm_embedding == 'False':
-        features, labels = prepare_data(opt.input_path, withroot=opt.rotate)
-        print(f'labels: {labels}')
+    ############################################################################################
+    if opt.input_path != "None" : # Condition pour utiisation préalable de matrice de distance ici
+    ############################################################################################
 
-        # Download features as CSV file, Numpy array
-        features_path = os.path.join(opt.matrices_output_path, 'features.csv')
-        np.savetxt(features_path, features, delimiter=',')
-        print(f'features CSV file saved to {features_path}')
+        # Features assignment only if a precomputed distance matrix is not provided
+        if opt.distance_matrix is None and opt.plm_embedding == 'False' :
+            features, labels = prepare_data(opt.input_path, withroot=opt.rotate)
+            print(f'labels: {labels}')
 
-        # Download labels as CSV file, Numpy array
-        labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
-        np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
-        print(f'labels CSV file saved to {labels_path}')
+            # Download features as CSV file, Numpy array
+            features_path = os.path.join(opt.matrices_output_path, 'features.csv')
+            np.savetxt(features_path, features, delimiter=',')
+            print(f'features CSV file saved to {features_path}')
 
-        distance_matrix = None
-    elif opt.distance_matrix is None and opt.plm_embedding == 'True':
-        features, labels = prepare_embedding_data(opt.input_path, withroot=opt.rotate)
-        print(f'labels: {labels}')
+            # Download labels as CSV file, Numpy array
+            labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
+            np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
+            print(f'labels CSV file saved to {labels_path}')
 
-        # Download features as CSV file, Numpy array
-        features_path = os.path.join(opt.matrices_output_path, 'features.csv')
-        np.savetxt(features_path, features, delimiter=',')
-        print(f'features CSV file saved to {features_path}')
+            distance_matrix = None
+        elif opt.distance_matrix is None and opt.plm_embedding == 'True':
+            features, labels = prepare_embedding_data(opt.input_path, withroot=opt.rotate)
+            print(f'labels: {labels}')
 
-        # Download labels as CSV file, Numpy array
-        labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
-        np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
-        print(f'labels CSV file saved to {labels_path}')
+            # Download features as CSV file, Numpy array
+            features_path = os.path.join(opt.matrices_output_path, 'features.csv')
+            np.savetxt(features_path, features, delimiter=',')
+            print(f'features CSV file saved to {features_path}')
 
-        distance_matrix = None
-    else:
-        if opt.labels is None:
-            raise AttributeError('You cannot input a custom distance matrix without corresponding feature labels')
-        features = None
-        distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
-        # Create directory to save matrices when a precomputed distance matrix is provided
-        if not os.path.exists(opt.output_path):
-            os.makedirs(opt.output_path)
+            # Download labels as CSV file, Numpy array
+            labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
+            np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
+            print(f'labels CSV file saved to {labels_path}')
+
+            distance_matrix = None
+        else:
+            if opt.labels is None:
+                raise AttributeError('You cannot input a custom distance matrix without corresponding feature labels')
+            features = None
+            distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
+            # Create directory to save matrices when a precomputed distance matrix is provided
+            if not os.path.exists(opt.output_path):
+                os.makedirs(opt.output_path)
 
 
 
@@ -377,23 +381,38 @@ def poincare_map_w_custom_distance(opt):
 
     # compute matrix of RFA similarities
 
-    RFA = compute_rfa_w_custom_distance(
-        features,
-        distance_matrix,
-        # mode=opt.mode,
-        k_neighbours=opt.knn,
-        distfn=opt.distfn,
-        distlocal=opt.distlocal,
-        connected=opt.connected,
-        sigma=opt.sigma,
-        output_path=opt.matrices_output_path
-        )
-    print(RFA)
+        RFA = compute_rfa_w_custom_distance(
+            features,
+            distance_matrix,
+            # mode=opt.mode,
+            k_neighbours=opt.knn,
+            distfn=opt.distfn,
+            distlocal=opt.distlocal,
+            connected=opt.connected,
+            sigma=opt.sigma,
+            output_path=opt.matrices_output_path
+            )
+        print(RFA)
 
-    # Download RFA matrix as CSV file, NumPy array
-    RFA_matrix_path = os.path.join(opt.matrices_output_path, 'RFA_matrix.csv')
-    np.savetxt(RFA_matrix_path, RFA, delimiter=",")
-    print(f"RFA matrix CSV file saved to {RFA_matrix_path}")
+        # Download RFA matrix as CSV file, NumPy array
+        RFA_matrix_path = os.path.join(opt.matrices_output_path, 'RFA_matrix.csv')
+        np.savetxt(RFA_matrix_path, RFA, delimiter=",")
+        print(f"RFA matrix CSV file saved to {RFA_matrix_path}")
+    
+
+    ######## Ajout du chargement de la matrice de distance et transformation en tenseur ########
+    else : 
+        RFA_matrix_path = os.path.join(opt.matrices_output_path, 'RFA_matrix.csv')
+        RFA_txt = np.loadtxt(RFA_matrix_path, delimiter=",")
+        RFA = torch.tensor(RFA_txt, dtype=torch.float32)
+        print(f"RFA matrix CSV file loaded from {RFA_matrix_path}")
+
+        # Download labels as CSV file, Numpy array
+        labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
+        labels = np.loadtxt(labels_path, delimiter=',', dtype=str)
+        print(f'labels CSV file loaded from {labels_path}')
+
+    ############################################################################################
 
     # Continue using RFA as a tensor in the rest of the code
     if opt.batchsize < 0:
