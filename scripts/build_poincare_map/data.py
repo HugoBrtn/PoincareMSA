@@ -58,10 +58,20 @@ def construct_tensor_from_embedding(fpath, option = 'mean'):
     ---
     tensor 
     '''
-    fixed_embedding = torch.load(fpath)['embedding']
-    fixed_embedding = np.mean(fixed_embedding, axis = 0)
-    return fixed_embedding
+    data = torch.load(fpath)
 
+    # PLM
+    if 'embedding' in data:
+        emb = data['embedding']
+
+    # PLM aae
+    elif 'aae_embedding' in data:
+        emb = data['aae_embedding'].reshape(-1)   # flatten obligatoire
+
+    else:
+        raise KeyError(f"Neither 'embedding' nor 'aae_embedding' found in file {fpath}")
+
+    return emb
 
 def prepare_data(fpath, withroot = True, fmt='.aamtx'):
     # print([x[0] for x in os.walk(fpath)])
