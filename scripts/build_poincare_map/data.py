@@ -60,18 +60,33 @@ def construct_tensor_from_embedding(fpath, option = 'mean'):
     '''
     data = torch.load(fpath)
 
-    # PLM
     if 'embedding' in data:
         emb = data['embedding']
 
-    # PLM aae
+        # conversion numpy -> torch
+        if not torch.is_tensor(emb):
+            emb = torch.tensor(emb)
+
+        # pooling if emb is (L, D)
+        if emb.ndim == 2:
+            emb = emb.mean(dim=0)     # → (D,)
+        elif emb.ndim != 1:
+            raise ValueError(f"Unexpected shape {emb.shape} in {fpath}")
+
     elif 'aae_embedding' in data:
-        emb = data['aae_embedding'].reshape(-1)   # flatten obligatoire
+        emb = data['aae_embedding']
+
+        if not torch.is_tensor(emb):
+            emb = torch.tensor(emb)
+
+        emb = emb.reshape(-1)         # flatten (64,32) -> 2048
 
     else:
-        raise KeyError(f"Neither 'embedding' nor 'aae_embedding' found in file {fpath}")
+        raise KeyError(f"No recognized embedding key in {fpath}")
 
     return emb
+
+
 
 def prepare_data(fpath, withroot = True, fmt='.aamtx'):
     # print([x[0] for x in os.walk(fpath)])
