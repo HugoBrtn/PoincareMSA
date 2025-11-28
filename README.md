@@ -48,19 +48,19 @@ JAX is not bundled in the conda environment because it needs a specific build de
 **A. If your machine has an NVIDIA GPU + CUDA ≥ 11.0**
 
 Install the CUDA-compatible JAX wheel:
-'''
+
+```
 pip install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-'''
+```
 
 If your CUDA version differs (e.g. cuda12), replace cuda11_cudnn82 accordingly.
 See available wheels:
 https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
 **B. If your machine does not have a GPU (CPU only)**
-
-'''
+```
 pip install jax jaxlib
-'''
+```
 This automatically installs a CPU-compatible version.
 
 ### Git LFS (Large File Support)
@@ -68,29 +68,29 @@ Some files used by PoincaréMSA (e.g., embeddings) require Git LFS.
 
 **1.Install Git LFS**
 Linux:
-'''
+```
 sudo apt update
 sudo apt install git-lfs
-'''
+```
 
 macOS:
-'''
+```
 brew install git-lfs
-'''
+```
 
 Windows: download from https://git-lfs.com/
 
 **2.Enable Git LFS**
-'''
+```
 git lfs install
-'''
+```
 
 **3.Pull large files tracked by LFS**
 From inside the project directory:
 
-'''
+```
 git lfs pull
-'''
+```
 
 This step is required to download embeddings and other large assets.
 
