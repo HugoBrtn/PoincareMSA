@@ -13,33 +13,86 @@ We provide three different Google Colab notebooks for interactive visualization 
 
 # Version for local installation
 
+## Software installation
+
 To get a local copy of the software run:
 
 ```
-git clone git@github.com:DSIMB/PoincareMSA.git
+git clone https://github.com/HugoBrtn/PoincareMSA.git
 cd PoincareMSA
 ```
 
-The program is implemented in `python3.7` using `pytorch` library for Poincaré disk construction and `plotly` for interactive visualisation of the resulting projections.
+The program runs with Python 3.10, PyTorch for Poincaré disk computation, and Plotly for interactive visualisations.
 
-If you are working in Linux, you can use a conda environment to access all the necessary libraries:
+### Create and update the conda environment
+
+All required dependencies are provided in the file env_poincare.yml.
+
+**1.Create the environment**
 
 ```
 conda env create -f env_poincare.yml
-conda activate env_poincare
+conda activate poincare
 ```
-Otherwise here is a list of necessary dependencies to install:
+
+**2.Update the environment**
+This ensures you have the latest dependencies:
 
 ```
-pytorch 1.7.1
-sklearn 0.24.1
-numpy 1.19.2
-pandas 1.2.3
-scipy 1.6.0
-seaborn 0.11.1
-plotly 5.8.0
-jax / jaxlib 0.3.25
+conda env update -n poincare -f env_poincare.yml --prune
 ```
+
+### JAX installation (depending on your hardware)
+JAX is not bundled in the conda environment because it needs a specific build depending on CUDA / CPU.
+
+**A. If your machine has an NVIDIA GPU + CUDA ≥ 11.0**
+
+Install the CUDA-compatible JAX wheel:
+'''
+pip install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+'''
+
+If your CUDA version differs (e.g. cuda12), replace cuda11_cudnn82 accordingly.
+See available wheels:
+https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+**B. If your machine does not have a GPU (CPU only)**
+
+'''
+pip install jax jaxlib
+'''
+This automatically installs a CPU-compatible version.
+
+### Git LFS (Large File Support)
+Some files used by PoincaréMSA (e.g., embeddings) require Git LFS.
+
+**1.Install Git LFS**
+Linux:
+'''
+sudo apt update
+sudo apt install git-lfs
+'''
+
+macOS:
+'''
+brew install git-lfs
+'''
+
+Windows: download from https://git-lfs.com/
+
+**2.Enable Git LFS**
+'''
+git lfs install
+'''
+
+**3.Pull large files tracked by LFS**
+From inside the project directory:
+
+'''
+git lfs pull
+'''
+
+This step is required to download embeddings and other large assets.
 
 ## Python notebooks
 
