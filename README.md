@@ -1,86 +1,125 @@
-<img src=".github/PoincareMSA_small_logo.png" alt="PoincareMSA logo" style="height: 100px;"/>
-     
-PoincaréMSA is a tool for protein family vizualisation starting from a multiple sequence alignment (either provided by the user or built by homologous search for a target sequence). It is available in the form of an interactive Google Colab notebooks and the underlying algorithm is described in Susmelj et al. [1]. PoincaréMSA takes as input a multiple sequence alignment (MSA) and builds its projection on a Poincaré disk using the method developed by Klimovskaia et al. in [2]. For the detailed tutorial and contacts please see: https://www.dsimb.inserm.fr/POINCARE_MSA
+# PoincaréMSA — quick start (updated)
 
-# About
-PoincareMSA builds an interactive projection of an input protein multiple sequence alignemnt (MSA) using a method developed by Susmelj et al. [1] based on Poincaré maps [2]. It reproduces both local proximities of protein sequences and hierarchy contained in the given data. Thus, sequences located closer to the center of projection correspond to the proteins sharing the most general functional properites and/or appearing at the earlier stages of evolution.
+This file is an updated README derived from the original `README.md` with a few practical additions and clarifications for running the code from the `examples/` folder.
 
-# Colab version
-We provide three different Google Colab notebooks for interactive visualization of multiple sequence alignments:
-* [PoincareMSA_colab.ipynb](https://colab.research.google.com/github/DSIMB/PoincareMSA/blob/master/PoincareMSA_colab.ipynb) takes as input a MSA in `.mfasta` format provided by a user. The user can also provide an annotation in `.csv` format which will be used for coloring, as well as an UniProt IDs list used to automatically fetch taxonomy informations for coloring.
-* [PoincareMSA_colab_examples.ipynb](https://colab.research.google.com/github/DSIMB/PoincareMSA/blob/master/PoincareMSA_colab_examples.ipynb) builds PoincareMSA projections from the example alignments available in `examples` directory.
-* [PoincareMSA_colab_MMseqs2.ipynb](https://colab.research.google.com/github/DSIMB/PoincareMSA/blob/master/PoincareMSA_colab_MMseqs2.ipynb) performs a homologous sequence search for a target sequence and filtering of the resulting alignment with further projection by PoincaréMSA.
+Overview
+--------
+PoincaréMSA builds an interactive projection of an input protein multiple sequence alignment (MSA) on the Poincaré disk. It reproduces both local proximities and hierarchical structure in the data. The original project and algorithm are described in Susmelj et al. (see citations in the original README).
 
-# Version for local installation
+What changed in this README
+---------------------------
+- Clarified how to run the examples using precomputed embeddings (plain `.pt` files) or embeddings produced by an autoencoder.
+- Documented how to start the pipeline from a precomputed distance matrix or an already computed RFA matrix.
+- Updated environment setup instructions (the `env_poincare.yml` file has been refreshed). Includes a short note about installing JAX with the correct CUDA/JAX build.
+- Added Git LFS usage notes (required for large example files in some setups).
 
-To get a local copy of the software run:
+Notebooks and examples
+----------------------
+The repository contains several notebooks in `examples/` and top-level Colab notebooks. The easiest way to try PoincaréMSA is to open one of the example notebooks (for instance `examples/kinases/PoincareMSA_kinases _method_choice.ipynb`) and follow the instructions there.
 
+Three Colab versions are provided in the original README:
+- `PoincareMSA_colab.ipynb` — general notebook (uses `.mfasta` by default)
+- `PoincareMSA_colab_examples.ipynb` — runs example datasets shipped with the repo
+- `PoincareMSA_colab_MMseqs2.ipynb` — builds MSAs using MMseqs2 and projects them
+
+New: example input variants supported
+------------------------------------
+The example scripts/notebooks now support three alternative input workflows in addition to the original `.mfasta` pipeline:
+
+1) Using precomputed embeddings (PLM-style `.pt` files)
+   - In notebooks: set the data type to `plm` and point `in_name` / `embedding_path` to the directory containing `.pt` files.
+   - From the command line: pass `--plm_embedding True` and `--input_path` pointing to a folder with `.pt` files.
+
+2) Using PLM embeddings produced by an autoencoder (AAE)
+   - In notebooks: set the data type to `plm_aae` and point to the proper embedding folder.
+   - From the command line: use `--plm_embedding True` and the `--method` that corresponds to your workflow where appropriate (the notebooks set `data_type='plm_aae'`).
+
+3) Starting from a precomputed distance matrix or an RFA matrix
+   - You can start the pipeline with either a CSV distance matrix or a saved RFA matrix.
+   - Notebooks: set `data_type` to `distance_matrix` or `RFA_matrix` and set the variables `distance_matrix`, `labels`, `mid_output` and `out_name_results` accordingly.
+   - Command-line example (distance matrix):
+
+```bash
+PYTHONPATH=$(pwd):$PYTHONPATH python scripts/build_poincare_map/main.py \
+  --method distance_matrix \
+  --distance_matrix path/to/distance_matrix.csv \
+  --labels path/to/labels.csv \
+  --matrices_output_path path/to/mid_output/ \
+  --output_path path/to/results/ \
+  --plm_embedding False \
+  --knn 5 --sigma 1.0 --gamma 2.0 --seed 0
 ```
-git clone git@github.com:DSIMB/PoincareMSA.git
-cd PoincareMSA
+
+Command-line example (use precomputed RFA):
+
+```bash
+PYTHONPATH=$(pwd):$PYTHONPATH python scripts/build_poincare_map/main.py \
+  --method RFA_matrix \
+  --matrices_output_path path/to/mid_output/ \
+  --output_path path/to/results/ \
+  --knn 5 --sigma 1.0 --gamma 2.0 --seed 0
 ```
 
-The program is implemented in `python3.7` using `pytorch` library for Poincaré disk construction and `plotly` for interactive visualisation of the resulting projections.
+Notes about labels and CSV formats
+---------------------------------
+- If you provide a distance matrix, also pass a `labels.csv` file with one identifier per line (or a CSV with a single column of labels). The code expects the number of labels to match the matrix dimension.
+- The code has some robustness around CSV reading (it will try to detect when pandas misinterprets the first row as a header). If you get a mismatch error (labels length vs matrix size), check whether the distance matrix CSV has a header row or an extra index column. Re-save the CSV without header/index or provide a proper `labels.csv`.
 
-If you are working in Linux, you can use a conda environment to access all the necessary libraries:
+Environment (conda) and JAX
+---------------------------
+The `env_poincare.yml` used by this repository has been updated. To update a local conda environment named `poincare` with the revised file run:
 
-```
-conda env create -f env_poincare.yml
-conda activate env_poincare
-```
-Otherwise here is a list of necessary dependencies to install:
-
-```
-pytorch 1.7.1
-sklearn 0.24.1
-numpy 1.19.2
-pandas 1.2.3
-scipy 1.6.0
-seaborn 0.11.1
-plotly 5.8.0
-jax / jaxlib 0.3.25
+```bash
+conda env update -n poincare -f env_poincare.yml --prune
 ```
 
-## Python notebooks
+JAX requires a matching `jaxlib` CUDA build for your local CUDA driver. The repository can't know your CUDA version, so install JAX with the wheel matching your CUDA version. An example (change `cuda11_cudnn82` to match your CUDA):
 
-The best way to try PoincaréMSA is by launching python notebooks with provided examples. To launch a particular example one needs to put the corresponding jupyter notebook to the repository root.
-
-For example, to run PoincaréMSA on kinase dataset on should execute:
-
+```bash
+pip install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# -> change cuda11_cudnn82 according to your CUDA version (cuda11_cudnn11, cuda12_cudnnX, ...)
 ```
-cp examples/kinases/PoincareMSA_kinases.ipynb ./
-jupyter-notebook PoincareMSA_kinases.ipynb
+
+If you don't have a GPU or don't want JAX GPU support, you can omit the `cuda` extras and install the CPU-only JAX:
+
+```bash
+pip install jax jaxlib
 ```
-The notebook can be then easily modified to work with any user-provided dataset.
 
+Git LFS (Large File Storage)
+----------------------------
+Some example datasets or embeddings may be stored with Git LFS. If you cloned the repository and see placeholder files or missing large blobs, install and pull LFS files:
 
-Otherwise, the used can also launche the projection generation step by step as described below.
+1. Install git-lfs (Ubuntu/Debian example):
 
-## Command line step-by-step version
-
-Data preparation
-
-The user is invited to provide its MSA in the classical `.mfasta` format. Each sequence of the alignment is translated to a profile using position-specific scoring matrix (PSSM) according to the pseudo-count algortihm of Henikoff & Henikoff. The related scripts are located in `scripts/prepare_data/` directory and driver scripts are provided for every example as `create_projection.sh`.
-
-The resulting PSSM profiles representing each protein of MSA are stored in the directory `fastas0.9`, where 0.9 indicate the threshold percentage of gaps per position used to filter initial alignment. To build a Poincaré disk from this data, one needs to run a command from `scripts/build_poincare_map/` directory:
-
+```bash
+sudo apt update
+sudo apt install git-lfs
+git lfs install
 ```
-python main.py --input_path path_to_files/fastas0.9/ --output_path output_dir --knn 5 --gamma 2 --batchsize 4 --epochs 1000
+
+2. In the project directory, fetch LFS-tracked blobs:
+
+```bash
+git lfs pull
 ```
-which will create an output `.csv` file with protein coordinates in the final projection and `.png` images reflecting the learning process. The `.csv` file can be further used to build interactive visualisation.
 
+Troubleshooting common issues
+-----------------------------
+- ValueError about "Number of sequence and number of annotation doesn't match": this happens when the annotation file has a different number of rows than the embedding CSV. Check `path_embedding` and `path_annotation` for correct files. The notebook includes a small diagnostic/fix helper to regenerate an annotation file aligned to the embeddings if needed.
+- CSV header/shape issues when loading distance matrices: pandas may treat the first row as a header and drop a numeric row. If you see unexpected shapes, re-save the CSV without a header or pass `header=None` when generating it.
 
-# Examples of use
-We provide several examples of PoincareMSA usage for different protien families in the `examples` folder. Each example comes with a bash script alloqing to reproduce the results starting from MSA and labels contained in `data`.
+Development notes
+-----------------
+- The pipeline orchestration (I/O, option parsing) lives in `scripts/build_poincare_map/main.py`.
+- RFA/KNN computation is implemented in `scripts/build_poincare_map/data.py`.
+- Training code is implemented in `train.py`, `model.py` and `rsgd.py`.
+- Visualization helpers are in `scripts/visualize_projection/`.
 
-# References
-When using PoincaréMSA, please cite the following research: 
+If you want me to (choose one):
+- add an example invocation into each notebook that demonstrates starting from a distance matrix, or
+- modify the example notebooks to automatically create a compatible `labels.csv` when missing.
 
-[1] A. K. Susmelj, Y. Ren, Y. Vander Meersche, J.-C. Gelly, T. Galochkina. Poincaré maps for visualization of large protein families, _Briefings in Bioinformatics_, bbad103 (2023). https://doi.org/10.1093/bib/bbad103
-
-The projection construction is adapted from the original code: https://github.com/facebookresearch/PoincareMaps developed for RNA sequence data visualization as described in the following paper:
-
-[2] A. Klimovskaia, D. Lopez-Paz, L. Bottou et al. Poincaré maps for analyzing complex hierarchies in single-cell data. _Nat Commun_ 11, 2966 (2020). https://doi.org/10.1038/s41467-020-16822-4
-
-# Contact
-For scientific collaboration please contact Dr. Tatiana Galochkina at tatiana.galochkina@u-paris.fr and Dr. Jean-Christophe Gelly at jean-christophe.gelly@u-paris.fr.
+References and contact
+----------------------
+Please refer to the original `README.md` for the publications and main contact emails.

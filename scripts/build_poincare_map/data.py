@@ -5,82 +5,65 @@
 # LICENSE file in the root directory of this source tree.
 #
 
+"""Utilities to prepare data and compute RFA (random forest affinity) matrices.
+
+This module contains routines to:
+ - construct tensors from PSSM or embedding files,
+ - prepare feature matrices and labels,
+ - compute KNN, similarity S, Laplacian and the RFA matrix.
+
+Only a subset of the original repository functionality is required by the
+main pipeline; the code here keeps the public functions used by
+`scripts/build_poincare_map/main.py` and documents their behavior.
+"""
+
 from sklearn.neighbors import kneighbors_graph
 from sklearn.metrics import pairwise_distances
-from sklearn.decomposition import PCA
 from scipy.sparse import csgraph
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import torch
 import os
-
 import timeit
-import re
-from argparse import ArgumentParser
+import logging
 
-def create_parser():
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--path", type=str,
-        required=True,
-        help="Path of aatmx file"
-    )
-    parser.add_argument(
-        "--maxlen",
-        type=int,
-        default=872,
-        help="Max length",
-    )
-    return parser
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 # Construct a padded numpy matrices for a given PSSM matrix
 # This will be the function to change for embeddings
 def construct_tensor(fpath):
+    """Load a flattened numeric vector from a plain-text file.
+
+    The original code used `.aamtx` files containing PSSM-like values;
+    here we simply load and flatten the numeric array.
+    """
     ansarr = np.loadtxt(fpath).reshape(-1)
-    # quit()
-    # ansarr = np.zeros((maxlen, 20))
-    # ansarr[:arr.shape[0], :] = arr
     return np.array(ansarr)
 
 
-def construct_tensor_from_embedding(fpath, option = 'mean'):
-    '''Same function as construct_tensor, but adapted for embeddings
-    
-    Args
-    ---
-    fpath : str
-        Path to embedding file; these are usually stored in .pt format
-    option : str
-        How should the embeddings be reduced ?
+def construct_tensor_from_embedding(fpath, option="mean"):
+    """Load an embedding from a .pt (torch) file and reduce it to a vector.
 
-    Returns
-    ---
-    tensor 
-    '''
+    Supported keys in the saved file: `embedding`, `aae_embedding`.
+    If the embedding has sequence length (L, D) it is mean-pooled.
+    """
     data = torch.load(fpath)
 
-    if 'embedding' in data:
-        emb = data['embedding']
-
-        # conversion numpy -> torch
+    if "embedding" in data:
+        emb = data["embedding"]
         if not torch.is_tensor(emb):
             emb = torch.tensor(emb)
-
-        # pooling if emb is (L, D)
         if emb.ndim == 2:
-            emb = emb.mean(dim=0)     # → (D,)
+            emb = emb.mean(dim=0)
         elif emb.ndim != 1:
             raise ValueError(f"Unexpected shape {emb.shape} in {fpath}")
-
-    elif 'aae_embedding' in data:
-        emb = data['aae_embedding']
-
+    elif "aae_embedding" in data:
+        emb = data["aae_embedding"]
         if not torch.is_tensor(emb):
             emb = torch.tensor(emb)
-
-        emb = emb.reshape(-1)         # flatten (64,32) -> 2048
-
+        emb = emb.reshape(-1)
     else:
         raise KeyError(f"No recognized embedding key in {fpath}")
 
@@ -94,29 +77,30 @@ def prepare_data(fpath, withroot = True, fmt='.aamtx'):
     # fmt = '.aamtx'
     proteins = [s for s in os.listdir(fpath) if fmt in s]
     n_proteins = len(proteins)
-    print(f"{n_proteins-1} proteins found in folder {fpath}.")
+    logger = logging.getLogger(__name__)
+    logger.info("%d proteins found in folder %s.", n_proteins - 1, fpath)
 
     if not withroot:
         proteins.remove(f"0{fmt}")
         n_proteins = len(proteins)
-        print("No root detected")
+        logger.info("No root detected")
 
     protein_file = proteins[0]
-    print(proteins[:20])
-    print(protein_file)
+    logger.debug("Example files: %s", proteins[:20])
+    logger.debug("First file: %s", protein_file)
     fin = f'{fpath}/{protein_file}'    
 
     a = construct_tensor(fin)
 
     features = np.zeros([n_proteins, len(a)])
     labels = []
-    print("Prepare data: tensor construction")
+    logger.info("Prepare data: tensor construction")
     for i, protein_name in enumerate(proteins):
         #print(i, protein_name)
         fin = f'{fpath}/{protein_name}'
         features[i, :] = construct_tensor(fin)
         labels.append(protein_name.split('.')[0])
-    print("Prepare data: successfully terminated")
+    logger.info("Prepare data: successfully terminated")
     return torch.Tensor(features), np.array(labels)
 
 
@@ -139,8 +123,9 @@ def prepare_embedding_data(fpath, withroot = True, fmt='.pt'):
     '''
     proteins = [s for s in os.listdir(fpath) if fmt in s]
     n_proteins = len(proteins)
-    print(f"{n_proteins} proteins found in folder {fpath}.")
-    print(proteins)
+    logger = logging.getLogger(__name__)
+    logger.info("%d proteins found in folder %s.", n_proteins, fpath)
+    logger.debug("files: %s", proteins)
 
     # if not withroot:
     #     proteins.remove("0.txt")
@@ -148,19 +133,19 @@ def prepare_embedding_data(fpath, withroot = True, fmt='.pt'):
     #     print("No root detected")
 
     protein_file = proteins[0]
-    print(protein_file)
+    logger.debug("First file: %s", protein_file)
     fin = f'{fpath}/{protein_file}'    
 
     a = construct_tensor_from_embedding(fin)
 
     features = np.zeros([n_proteins, len(a)])
     labels = []
-    print("Prepare data: tensor construction")
+    logger.info("Prepare data: tensor construction")
     for i, protein_name in enumerate(proteins):
         fin = f'{fpath}/{protein_name}'
         features[i, :] = construct_tensor_from_embedding(fin)
         labels.append(protein_name.split('.')[0])
-    print("Prepare data: successfully terminated")
+    logger.info("Prepare data: successfully terminated")
     return torch.Tensor(features), np.array(labels)
 
 
@@ -205,20 +190,19 @@ def prepare_embedding_data(fpath, withroot = True, fmt='.pt'):
 
 
 def connect_knn(KNN, distances, n_components, labels):
-    """
-    Given a KNN graph, connect nodes until we obtain a single connected
-    component.
-    """
-    c = [list(labels).count(x) for x in np.unique(labels)]
+    """Connect KNN components by adding minimal inter-component edges.
 
+    This is a utility used when a connected KNN graph is required for
+    downstream Laplacian/RFA computation.
+    """
     cur_comp = 0
     while n_components > 1:
         idx_cur = np.where(labels == cur_comp)[0]
         idx_rest = np.where(labels != cur_comp)[0]
-        d = distances[idx_cur][:, idx_rest]
+        d = distances[np.ix_(idx_cur, idx_rest)]
         ia, ja = np.where(d == np.min(d))
-        i = ia
-        j = ja
+        i = ia[0]
+        j = ja[0]
 
         KNN[idx_cur[i], idx_rest[j]] = distances[idx_cur[i], idx_rest[j]]
         KNN[idx_rest[j], idx_cur[i]] = distances[idx_rest[j], idx_cur[i]]
@@ -230,8 +214,8 @@ def connect_knn(KNN, distances, n_components, labels):
     return KNN
 
 
-def compute_rfa(features, mode='features', k_neighbours=15, distfn='sym', 
-    connected=False, sigma=1.0, distlocal='minkowski'):
+def compute_rfa(features, mode='features', k_neighbours=15, distfn='sym',
+                connected=False, sigma=1.0, distlocal='minkowski'):
     """
     Computes the target RFA similarity matrix. The RFA matrix of
     similarities relates to the commute time between pairs of nodes, and it is
@@ -279,22 +263,25 @@ def compute_rfa(features, mode='features', k_neighbours=15, distfn='sym',
         S = np.exp(-KNN / sigma)
 
     S[KNN == 0] = 0
-    print("Computing laplacian...")    
+    logger = logging.getLogger(__name__)
+    logger.info("Computing laplacian...")
     L = csgraph.laplacian(S, normed=False)
-    print(f"Laplacian computed in {(timeit.default_timer() - start):.2f} sec")
+    logger.info("Laplacian computed in %.2f sec", (timeit.default_timer() - start))
 
-    print("Computing RFA...")
+    logger.info("Computing RFA...")
     start = timeit.default_timer()
     RFA = np.linalg.inv(L + np.eye(L.shape[0]))
-    RFA[RFA==np.nan] = 0.0
-    
-    print(f"RFA computed in {(timeit.default_timer() - start):.2f} sec")
+    # Replace NaNs (if any) with zeros
+    RFA[np.isnan(RFA)] = 0.0
+
+    logger.info("RFA computed in %.2f sec", (timeit.default_timer() - start))
 
     return torch.Tensor(RFA)
 
 
-def compute_rfa_w_custom_distance(features=None, distance_matrix=None, # mode='features',
-    k_neighbours=15, distfn='sym', connected=False, sigma=1.0, distlocal='minkowski', output_path=None):
+def compute_rfa_w_custom_distance(features=None, distance_matrix=None,
+                                  k_neighbours=15, distfn='sym', connected=False,
+                                  sigma=1.0, distlocal='minkowski', output_path=None):
     """
     Computes the target RFA similarity matrix. The RFA matrix of
     similarities relates to the commute time between pairs of nodes, and it is
@@ -329,8 +316,7 @@ def compute_rfa_w_custom_distance(features=None, distance_matrix=None, # mode='f
     # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise.distance_metrics.html#sklearn.metrics.pairwise.distance_metrics
     # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise_distances.html
 
-    # Compute the KNN matrix
-    # Using the features or a user provided distance matrix
+    # Compute the KNN matrix using either features or a provided distance matrix
     if features is not None or distance_matrix is not None:
         # Use distance_matrix if provided, otherwise use the features
         data = distance_matrix if distance_matrix is not None else features
@@ -358,7 +344,7 @@ def compute_rfa_w_custom_distance(features=None, distance_matrix=None, # mode='f
         if output_path is not None:
             KNN_output_path = os.path.join(output_path, 'KNN_matrix.csv')
             np.savetxt(KNN_output_path, KNN, delimiter=",")
-            print(f"KNN matrix CSV file saved to {KNN_output_path}")
+            logger.info("KNN matrix CSV file saved to %s", KNN_output_path)
 
     # # If mode is not 'features' and no distance_matrix is provided, assume KNN is already computed
     # else:
@@ -386,17 +372,17 @@ def compute_rfa_w_custom_distance(features=None, distance_matrix=None, # mode='f
 
     # Compute the Laplacian
     S[KNN == 0] = 0
-    print("Computing laplacian...")    
+    logger.info("Computing laplacian...")
     L = csgraph.laplacian(S, normed=False)
-    print(f"Laplacian computed in {(timeit.default_timer() - start):.2f} sec")
+    logger.info("Laplacian computed in %.2f sec", (timeit.default_timer() - start))
 
     # Compute the RFA matrix
-    print("Computing RFA...")
+    logger.info("Computing RFA...")
     start = timeit.default_timer()
     RFA = np.linalg.inv(L + np.eye(L.shape[0]))
     # Replace NaNs (if any) with zeros
     RFA[np.isnan(RFA)] = 0.0
-    print(f"RFA computed in {(timeit.default_timer() - start):.2f} sec")
+    logger.info("RFA computed in %.2f sec", (timeit.default_timer() - start))
 
     return torch.Tensor(RFA)
 

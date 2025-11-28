@@ -1,0 +1,40 @@
+name: poincare
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+
+  # ---- CUDA & GPU support ----
+  - pytorch=2.3
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=11.8
+
+  # ---- Scientific stack ----
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - pip
+  - pip:
+      - tqdm
+      - seaborn
+      - plotly
+      - adjusttext
+
+      # ---- JAX GPU CUDA 11 ----
+      - "jax[cuda11_cudnn82] @ https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+
+      # ---- Dependencies used by PoincaréMSA ----
+      - etils
+      - ncbi-taxonomist
+      - entrezpy
+
+      # ---- Optional (needed for some notebooks) ----
+      - ipykernel
+      - jupyterlab

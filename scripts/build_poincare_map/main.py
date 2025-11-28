@@ -4,61 +4,79 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 #
-from sklearn.metrics.pairwise import pairwise_distances
-from torch.utils.data import TensorDataset
-from sklearn.decomposition import PCA
-import numpy as np
+"""CLI entrypoint for building Poincaré maps.
+
+This module orchestrates data preparation (features or precomputed distance
+matrices), RFA computation and training of the Poincaré embedding.
+
+The script intentionally keeps I/O and orchestration logic here while
+computation routines live in `data.py` and optimization/Model code in
+`model.py` / `train.py`.
+"""
+
 import argparse
-import torch
+import logging
+import os
+import timeit
+from typing import Tuple
+
+import numpy as np
 import pandas as pd
-from data import prepare_data, prepare_embedding_data, compute_rfa, compute_rfa_w_custom_distance
-from model import PoincareEmbedding, PoincareDistance
-from model import poincare_root, poincare_translation
+import torch
+from torch.utils.data import TensorDataset
+
+from data import (
+    prepare_data,
+    prepare_embedding_data,
+    compute_rfa,
+    compute_rfa_w_custom_distance,
+)
+from model import PoincareEmbedding, PoincareDistance, poincare_translation
 from rsgd import RiemannianSGD
 from train import train
 from poincare_maps import plotPoincareDisc
-from coldict import *
 
-import os
-import sys
-import os.path
-# from pathlib import Path
-import timeit
-import pickle
-import seaborn as sns
-sns.set()
+# Minimal logging setup used instead of prints to make messages easier to
+# filter/redirect in downstream tools.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 ### This function was added by Tatina Galochkina in order to improve reproducibility of the restuls 
 def set_seed(seed: int = 42) -> None:
+    """Set deterministic seeds for NumPy, PyTorch and environment.
+
+    This improves reproducibility across runs. Note that full reproducibility
+    across platforms/hardware is not guaranteed, but these settings reduce
+    nondeterminism from common sources.
+    """
     np.random.seed(seed)
-#    random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # When running on the CuDNN backend, two further options must be set
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    # Set a fixed value for the hash seed
     os.environ["PYTHONHASHSEED"] = str(seed)
-    print(f"Random seed set as {seed}")
+    logger.info("Random seed set as %d", seed)
 
 
-def create_output_name(opt):
-    titlename = f"dist={opt.distfn}, " +\
-                f"metric={opt.distlocal}, " +\
-                f"knn={opt.knn}, " +\
-                f"loss={opt.lossfn} " +\
-                f"sigma={opt.sigma:.2f}, " +\
-                f"gamma={opt.gamma:.2f}, " +\
-                f"n_pca={opt.pca}"
+def create_output_name(opt) -> Tuple[str, str]:
+    """Compose a human-readable title and a filesystem-safe filename base.
 
-    if not os.path.isdir(opt.output_path):
-        os.makedirs(opt.output_path)
+    Returns (title, filename_base).
+    """
+    titlename = (
+        f"dist={opt.distfn}, metric={opt.distlocal}, knn={opt.knn}, "
+        f"loss={opt.lossfn} sigma={opt.sigma:.2f}, gamma={opt.gamma:.2f}, n_pca={opt.pca}"
+    )
 
-    filename = opt.output_path +\
-               f"PM{opt.knn:d}" +\
-               f"sigma={opt.sigma:.2f}" +\
-               f"gamma={opt.gamma:.2f}" +\
-               f"{opt.distlocal}pca={opt.pca:d}_seed{opt.seed}"
+    os.makedirs(opt.output_path, exist_ok=True)
+
+    filename = os.path.join(
+        opt.output_path,
+        f"PM{opt.knn:d}"
+        f"sigma={opt.sigma:.2f}"
+        f"gamma={opt.gamma:.2f}"
+        f"{opt.distlocal}pca={opt.pca:d}_seed{opt.seed}",
+    )
 
     return titlename, filename
 
@@ -191,13 +209,13 @@ def parse_args():
 
 def poincare_map(opt):
     # read and preprocess the dataset
-    opt.cuda = True if torch.cuda.is_available() else False
-    print('CUDA:', opt.cuda)
-
+# Configure device and random seed
+    opt.cuda = torch.cuda.is_available()
+    logger.info("CUDA available: %s", opt.cuda)
     set_seed(opt.seed)
 #    torch.manual_seed(opt.seed)
 
-    features, labels = prepare_data(opt.input_path, withroot = opt.rotate) 
+    features, labels = prepare_data(opt.input_path, withroot=opt.rotate)
     # if not (opt.tree is None):
     #     tree_levels, color_dict = get_tree_colors(
     #         opt, labels, 
@@ -216,17 +234,16 @@ def poincare_map(opt):
         connected=opt.connected,
         sigma=opt.sigma
         )
-    #print(RFA)
+    logger.debug("RFA tensor shape: %s", getattr(RFA, 'shape', None))
     if opt.batchsize < 0:
-        opt.batchsize = min(512, int(len(RFA)/10))
-        print('batchsize = ', opt.batchsize)
+        opt.batchsize = min(512, int(len(RFA) / 10))
+        logger.info("batchsize set to %d", opt.batchsize)
 
     opt.lr = opt.batchsize / 16 * opt.lr
 
     titlename, fout = create_output_name(opt)
 
     indices = torch.arange(len(RFA))
-    
     if opt.cuda:
         indices = indices.cuda()
         RFA = RFA.cuda()
@@ -250,45 +267,35 @@ def poincare_map(opt):
     optimizer = RiemannianSGD(predictor.parameters(), lr=opt.lr)
 
     # train predictor
-    print('Starting training...')
+    logger.info("Starting training...")
     embeddings, loss, epoch = train(
-        predictor,
-        dataset,
-        optimizer,
-        opt,
-        fout=fout,
-        earlystop=opt.earlystop
-        )
+        predictor, dataset, optimizer, opt, fout=fout, earlystop=opt.earlystop
+    )
 
-    df_pm = pd.DataFrame(embeddings, columns=['pm1', 'pm2'])
-    df_pm['proteins_id'] = labels
+    df_pm = pd.DataFrame(embeddings, columns=["pm1", "pm2"])
+    df_pm["proteins_id"] = labels
 
+# Optionally recenter the disk at the provided root index
     if opt.rotate:
-        idx_root = np.where(df_pm['proteins_id'] == str(opt.iroot))[0][0]
-        print("Recentering poincare disk at ", opt.iroot) 
+        idx_root = np.where(df_pm["proteins_id"] == str(opt.iroot))[0][0]
+        logger.info("Recentering poincare disk at %s", opt.iroot)
 #        print("root index: ", idx_root)
         poincare_coord_rot = poincare_translation(
             -embeddings[idx_root, :], embeddings)
         df_rot = df_pm.copy()
         df_rot['pm1'] = poincare_coord_rot[:, 0]
         df_rot['pm2'] = poincare_coord_rot[:, 1]
-        df_rot.to_csv(fout + '.csv', sep=',', index=False)
-
+        df_rot.to_csv(fout + ".csv", sep=",", index=False)
     else:
-        df_pm.to_csv(fout + '.csv', sep=',', index=False)
+        df_pm.to_csv(fout + ".csv", sep=",", index=False)
 
     t = timeit.default_timer() - t_start
     titlename = f"\nloss = {loss:.3e}\ntime = {t/60:.3f} min"
-    print(titlename)
+    logger.info(titlename)
 
     plotPoincareDisc(
-        embeddings, 
-        title_name=titlename,
-        file_name=fout, 
-        d1=5.5, d2=5.0, 
-        bbox=(1.2, 1.),
-        leg=False
-        )
+        embeddings, title_name=titlename, file_name=fout, d1=5.5, d2=5.0, bbox=(1.2, 1.0), leg=False
+    )
 
     # idx_root = np.where(tree_levels == 'root')[0]
     # poincare_coord_rot = poincare_translation(-embeddings[idx_root, :], embeddings)
@@ -322,9 +329,9 @@ def poincare_map(opt):
 
 def poincare_map_w_custom_distance(opt):
     # read and preprocess the dataset
-    opt.cuda = True if torch.cuda.is_available() else False
-    print('CUDA:', opt.cuda)
-
+# Configure device and seed
+    opt.cuda = torch.cuda.is_available()
+    logger.info("CUDA available: %s", opt.cuda)
     set_seed(opt.seed)
 #    torch.manual_seed(opt.seed)
 
@@ -335,32 +342,32 @@ def poincare_map_w_custom_distance(opt):
         # Features assignment only if a precomputed distance matrix is not provided
         if opt.distance_matrix is None and opt.plm_embedding == 'False' :
             features, labels = prepare_data(opt.input_path, withroot=opt.rotate)
-            print(f'labels: {labels}')
+            logger.debug("labels: %s", labels)
 
             # Download features as CSV file, Numpy array
-            features_path = os.path.join(opt.matrices_output_path, 'features.csv')
-            np.savetxt(features_path, features, delimiter=',')
-            print(f'features CSV file saved to {features_path}')
+            features_path = os.path.join(opt.matrices_output_path, "features.csv")
+            np.savetxt(features_path, features, delimiter=",")
+            logger.info("features CSV file saved to %s", features_path)
 
             # Download labels as CSV file, Numpy array
-            labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
-            np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
-            print(f'labels CSV file saved to {labels_path}')
+            labels_path = os.path.join(opt.matrices_output_path, "labels.csv")
+            np.savetxt(labels_path, labels, delimiter=",", fmt="%s")
+            logger.info("labels CSV file saved to %s", labels_path)
 
             distance_matrix = None
         elif opt.distance_matrix is None and opt.plm_embedding == 'True':
             features, labels = prepare_embedding_data(opt.input_path, withroot=opt.rotate)
-            print(f'labels: {labels}')
+            logger.debug("labels: %s", labels)
 
             # Download features as CSV file, Numpy array
-            features_path = os.path.join(opt.matrices_output_path, 'features.csv')
-            np.savetxt(features_path, features, delimiter=',')
-            print(f'features CSV file saved to {features_path}')
+            features_path = os.path.join(opt.matrices_output_path, "features.csv")
+            np.savetxt(features_path, features, delimiter=",")
+            logger.info("features CSV file saved to %s", features_path)
 
             # Download labels as CSV file, Numpy array
-            labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
-            np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
-            print(f'labels CSV file saved to {labels_path}')
+            labels_path = os.path.join(opt.matrices_output_path, "labels.csv")
+            np.savetxt(labels_path, labels, delimiter=",", fmt="%s")
+            logger.info("labels CSV file saved to %s", labels_path)
 
             distance_matrix = None
         else:
@@ -405,9 +412,9 @@ def poincare_map_w_custom_distance(opt):
                         # Save labels to matrices_output_path so downstream code can find them
                         if opt.matrices_output_path is not None:
                             os.makedirs(opt.matrices_output_path, exist_ok=True)
-                            labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
-                            np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
-                            print(f'labels CSV file saved to {labels_path}')
+                            labels_path = os.path.join(opt.matrices_output_path, "labels.csv")
+                            np.savetxt(labels_path, labels, delimiter=",", fmt="%s")
+                            logger.info("labels CSV file saved to %s", labels_path)
                 else:
                     # Not a square dataframe — fallback to numpy load
                     distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
@@ -429,13 +436,13 @@ def poincare_map_w_custom_distance(opt):
             if not os.path.exists(opt.output_path):
                 os.makedirs(opt.output_path)
             
-            # Diagnostic: print shapes and basic checks to help debug label/matrix mismatches
+                    # Diagnostic: print shapes and basic checks to help debug label/matrix mismatches
             try:
                 dm_shape = np.array(distance_matrix).shape
             except Exception:
                 dm_shape = None
-            print(f"Debug: distance_matrix shape = {dm_shape}")
-            print(f"Debug: inferred labels length = {len(labels) if labels is not None else 'None'}")
+            logger.debug("distance_matrix shape = %s", dm_shape)
+            logger.debug("inferred labels length = %s", len(labels) if labels is not None else "None")
             # Validate distance matrix vs labels
             if dm_shape is not None:
                 if len(dm_shape) != 2 or dm_shape[0] != dm_shape[1]:
@@ -459,47 +466,44 @@ def poincare_map_w_custom_distance(opt):
         RFA = compute_rfa_w_custom_distance(
             features,
             distance_matrix,
-            # mode=opt.mode,
             k_neighbours=opt.knn,
             distfn=opt.distfn,
             distlocal=opt.distlocal,
             connected=opt.connected,
             sigma=opt.sigma,
-            output_path=opt.matrices_output_path
-            )
-        print(RFA)
+            output_path=opt.matrices_output_path,
+        )
+        logger.info("RFA matrix computed (tensor shape %s)", tuple(RFA.shape))
 
         # Download RFA matrix as CSV file, NumPy array
-        RFA_matrix_path = os.path.join(opt.matrices_output_path, 'RFA_matrix.csv')
+        RFA_matrix_path = os.path.join(opt.matrices_output_path, "RFA_matrix.csv")
         np.savetxt(RFA_matrix_path, RFA, delimiter=",")
-        print(f"RFA matrix CSV file saved to {RFA_matrix_path}")
-    
+        logger.info("RFA matrix CSV file saved to %s", RFA_matrix_path)
 
-    ######## Ajout du chargement de la matrice de distance et transformation en tenseur ########
-    else : 
-        RFA_matrix_path = os.path.join(opt.matrices_output_path, 'RFA_matrix.csv')
+    else:
+        # If the user asked to use a precomputed RFA matrix, load it from disk
+        RFA_matrix_path = os.path.join(opt.matrices_output_path, "RFA_matrix.csv")
         RFA_txt = np.loadtxt(RFA_matrix_path, delimiter=",")
         RFA = torch.tensor(RFA_txt, dtype=torch.float32)
-        print(f"RFA matrix CSV file loaded from {RFA_matrix_path}")
+        logger.info("RFA matrix CSV file loaded from %s", RFA_matrix_path)
 
         # Download labels as CSV file, Numpy array
-        labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
-        labels = np.loadtxt(labels_path, delimiter=',', dtype=str)
-        print(f'labels CSV file loaded from {labels_path}')
+        labels_path = os.path.join(opt.matrices_output_path, "labels.csv")
+        labels = np.loadtxt(labels_path, delimiter=",", dtype=str)
+        logger.info("labels CSV file loaded from %s", labels_path)
 
     ############################################################################################
 
     # Continue using RFA as a tensor in the rest of the code
     if opt.batchsize < 0:
-        opt.batchsize = min(512, int(len(RFA)/10))
-        print('batchsize = ', opt.batchsize)
+        opt.batchsize = min(512, int(len(RFA) / 10))
+        logger.info("batchsize = %d", opt.batchsize)
 
     opt.lr = opt.batchsize / 16 * opt.lr
 
     titlename, fout = create_output_name(opt)
 
     indices = torch.arange(len(RFA))
-
     if opt.cuda:
         indices = indices.cuda()
         RFA = RFA.cuda()
@@ -523,7 +527,7 @@ def poincare_map_w_custom_distance(opt):
     optimizer = RiemannianSGD(predictor.parameters(), lr=opt.lr)
 
     # train predictor
-    print('Starting training...')
+    logger.info('Starting training...')
     embeddings, loss, epoch = train(
         predictor,
         dataset,
@@ -533,7 +537,7 @@ def poincare_map_w_custom_distance(opt):
         earlystop=opt.earlystop
         )
 
-    df_pm = pd.DataFrame(embeddings, columns=['pm1', 'pm2'])
+    df_pm = pd.DataFrame(embeddings, columns=["pm1", "pm2"])
 
     # Prefer the labels variable populated earlier (when distance matrix provided we try to infer/save labels).
     if 'labels' in locals() and labels is not None:
@@ -557,16 +561,16 @@ def poincare_map_w_custom_distance(opt):
     n_emb = len(df_pm)
 
     # Diagnostic info to help find origin of mismatch
-    print(f"Debug: embeddings length = {n_emb}")
+    logger.debug("embeddings length = %d", n_emb)
     try:
         if 'distance_matrix' in locals() and distance_matrix is not None:
-            print(f"Debug: distance_matrix shape = {np.array(distance_matrix).shape}")
+            logger.debug("Debug: distance_matrix shape = %s", np.array(distance_matrix).shape)
     except Exception:
         pass
     try:
         if 'features' in locals() and features is not None:
             try:
-                print(f"Debug: features shape = {features.shape}")
+                logger.debug("Debug: features shape = %s", features.shape)
             except Exception:
                 pass
     except Exception:
@@ -585,13 +589,16 @@ def poincare_map_w_custom_distance(opt):
             except Exception:
                 pass
         detail_msg = "; ".join(details)
-        raise ValueError(f"Mismatch between number of embeddings and labels. {detail_msg}. Please ensure your labels correspond to the rows/columns of your input distance/features.")
+        raise ValueError(
+            f"Mismatch between number of embeddings and labels. {detail_msg}. "
+            "Please ensure your labels correspond to the rows/columns of your input distance/features."
+        )
 
     df_pm['proteins_id'] = labels_arr
 
     if opt.rotate:
-        idx_root = np.where(df_pm['proteins_id'] == str(opt.iroot))[0][0]
-        print("Recentering poincare disk at ", opt.iroot)
+        idx_root = np.where(df_pm["proteins_id"] == str(opt.iroot))[0][0]
+        logger.info("Recentering poincare disk at %s", opt.iroot)
 #        print("root index: ", idx_root)
         poincare_coord_rot = poincare_translation(
             -embeddings[idx_root, :], embeddings)
@@ -605,7 +612,7 @@ def poincare_map_w_custom_distance(opt):
 
     t = timeit.default_timer() - t_start
     titlename = f"\nloss = {loss:.3e}\ntime = {t/60:.3f} min"
-    print(titlename)
+    logger.info(titlename)
 
     plotPoincareDisc(
         embeddings, 
