@@ -6,13 +6,6 @@ Overview
 --------
 PoincaréMSA builds an interactive projection of an input protein multiple sequence alignment (MSA) on the Poincaré disk. It reproduces both local proximities and hierarchical structure in the data. The original project and algorithm are described in Susmelj et al. (see citations in the original README).
 
-What changed in this README
----------------------------
-- Clarified how to run the examples using precomputed embeddings (plain `.pt` files) or embeddings produced by an autoencoder.
-- Documented how to start the pipeline from a precomputed distance matrix or an already computed RFA matrix.
-- Updated environment setup instructions (the `env_poincare.yml` file has been refreshed). Includes a short note about installing JAX with the correct CUDA/JAX build.
-- Added Git LFS usage notes (required for large example files in some setups).
-
 Notebooks and examples
 ----------------------
 The repository contains several notebooks in `examples/` and top-level Colab notebooks. The easiest way to try PoincaréMSA is to open one of the example notebooks (for instance `examples/kinases/PoincareMSA_kinases _method_choice.ipynb`) and follow the instructions there.
