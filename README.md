@@ -15,6 +15,8 @@ We provide three different Google Colab notebooks for interactive visualization 
 
 ## Software installation
 
+### I - Clone repository
+
 To get a local copy of the software run:
 
 ```
@@ -24,7 +26,7 @@ cd PoincareMSA
 
 The program runs with Python 3.10, PyTorch for Poincaré disk computation, and Plotly for interactive visualisations.
 
-### Create and update the conda environment
+### II - Create and update the conda environment
 
 All required dependencies are provided in the file env_poincare.yml.
 
@@ -42,7 +44,7 @@ This ensures you have the latest dependencies:
 conda env update -n poincare -f env_poincare.yml --prune
 ```
 
-### JAX installation (depending on your hardware)
+### III - JAX installation (depending on your hardware)
 JAX is not bundled in the conda environment because it needs a specific build depending on CUDA / CPU.
 
 **A. If your machine has an NVIDIA GPU + CUDA ≥ 11.0**
@@ -63,7 +65,7 @@ pip install jax jaxlib
 ```
 This automatically installs a CPU-compatible version.
 
-### Git LFS (Large File Support)
+### IV - Git LFS (Large File Support)
 Some files used by PoincaréMSA (e.g., embeddings) require Git LFS.
 
 **1.Install Git LFS**
