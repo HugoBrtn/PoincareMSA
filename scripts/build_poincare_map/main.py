@@ -91,6 +91,9 @@ def create_output_name(opt):
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Adaptation of Poincare maps for MSA')
+    
+    parser.add_argument('--method', help='Method to choose : pssm, plm, plm_aae, RFA_matrix, distance_matrix', type=str, default="pssm")
+
     parser.add_argument('--dim', help='Embedding dimension', type=int, default=2)
 
     # Path to input files
@@ -326,7 +329,7 @@ def poincare_map_w_custom_distance(opt):
 #    torch.manual_seed(opt.seed)
 
     ############################################################################################
-    if opt.input_path != "None" : # Condition pour utiisation préalable de matrice de distance ici
+    if opt.method != "RFA_matrix" : # Condition pour utiisation préalable de matrice de rfa ici
     ############################################################################################
 
         # Features assignment only if a precomputed distance matrix is not provided
@@ -361,13 +364,85 @@ def poincare_map_w_custom_distance(opt):
 
             distance_matrix = None
         else:
-            if opt.labels is None:
-                raise AttributeError('You cannot input a custom distance matrix without corresponding feature labels')
+            # If a user provides a precomputed distance matrix we try to read it robustly.
+            # Accepts CSVs with an index/column labels (square dataframes) or plain numeric CSVs.
             features = None
-            distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
-            # Create directory to save matrices when a precomputed distance matrix is provided
+            distance_matrix = None
+            labels = None
+
+            if opt.distance_matrix is None:
+                raise AttributeError('distance_matrix path expected when entering this branch')
+
+            # Try to read with pandas to preserve labels if present
+            try:
+                # First try a pandas read assuming there may be an index column.
+                # However pandas by default treats the first row as header which can
+                # incorrectly drop one data row if the file has no header. To detect
+                # that case we compare the dataframe rowcount to the raw file linecount
+                # and fall back to a header-less read if they disagree.
+                df = pd.read_csv(opt.distance_matrix, index_col=0)
+                # count raw lines in file to detect header misinterpretation
+                try:
+                    with open(opt.distance_matrix, 'r') as fh:
+                        raw_lines = sum(1 for _ in fh)
+                except Exception:
+                    raw_lines = None
+
+                # If pandas read appears to have consumed a header (raw_lines == df.shape[0] + 1)
+                # then re-read without header to preserve all numeric rows.
+                if raw_lines is not None and raw_lines == df.shape[0] + 1:
+                    df = pd.read_csv(opt.distance_matrix, header=None)
+
+                # If the CSV appears square, use it; otherwise try numeric loadtxt fallback
+                if df.shape[0] == df.shape[1]:
+                    distance_matrix = df.values
+                    if opt.labels is None:
+                        # If the dataframe had an index, use it; otherwise generate string indices
+                        try:
+                            labels = df.index.astype(str).to_numpy()
+                        except Exception:
+                            labels = np.array([str(i) for i in range(distance_matrix.shape[0])])
+                        # Save labels to matrices_output_path so downstream code can find them
+                        if opt.matrices_output_path is not None:
+                            os.makedirs(opt.matrices_output_path, exist_ok=True)
+                            labels_path = os.path.join(opt.matrices_output_path, 'labels.csv')
+                            np.savetxt(labels_path, labels, delimiter=',', fmt='%s')
+                            print(f'labels CSV file saved to {labels_path}')
+                else:
+                    # Not a square dataframe — fallback to numpy load
+                    distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
+            except Exception:
+                # Fallback: plain numeric CSV
+                distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
+
+            # If labels were not inferred from the CSV, try to load from opt.labels
+            if labels is None:
+                if opt.labels is not None:
+                    labels = np.loadtxt(opt.labels, delimiter=',', dtype=str)
+                else:
+                    # No labels provided: create default numeric string labels 0..n-1
+                    labels = np.array([str(i) for i in range(distance_matrix.shape[0])])
+
+            # Ensure output directories exist
+            if opt.matrices_output_path is not None:
+                os.makedirs(opt.matrices_output_path, exist_ok=True)
             if not os.path.exists(opt.output_path):
                 os.makedirs(opt.output_path)
+            
+            # Diagnostic: print shapes and basic checks to help debug label/matrix mismatches
+            try:
+                dm_shape = np.array(distance_matrix).shape
+            except Exception:
+                dm_shape = None
+            print(f"Debug: distance_matrix shape = {dm_shape}")
+            print(f"Debug: inferred labels length = {len(labels) if labels is not None else 'None'}")
+            # Validate distance matrix vs labels
+            if dm_shape is not None:
+                if len(dm_shape) != 2 or dm_shape[0] != dm_shape[1]:
+                    raise ValueError(f"Provided distance_matrix must be a square 2D array. Got shape {dm_shape}.")
+                if labels is not None and len(labels) != dm_shape[0]:
+                    raise ValueError(f"Labels length ({len(labels)}) does not match distance_matrix size ({dm_shape[0]}). Please provide matching labels or a correctly sized distance matrix.")
+
 
 
 
@@ -459,13 +534,60 @@ def poincare_map_w_custom_distance(opt):
         )
 
     df_pm = pd.DataFrame(embeddings, columns=['pm1', 'pm2'])
-    if opt.distance_matrix is None:
-        df_pm['proteins_id'] = labels
-        # print(f'labels: {labels}')
+
+    # Prefer the labels variable populated earlier (when distance matrix provided we try to infer/save labels).
+    if 'labels' in locals() and labels is not None:
+        labels_arr = np.array(labels, dtype=str)
     else:
-        labels = np.loadtxt(opt.labels, delimiter=',', dtype=str)
-        df_pm['proteins_id'] = labels
-        # print(f'labels: {labels}')
+        if opt.labels is not None and os.path.exists(opt.labels):
+            try:
+                labels_arr = np.loadtxt(opt.labels, delimiter=',', dtype=str)
+            except Exception:
+                try:
+                    labels_arr = pd.read_csv(opt.labels, header=None).iloc[:, 0].astype(str).to_numpy()
+                except Exception:
+                    labels_arr = np.array([], dtype=str)
+        else:
+            labels_arr = np.array([], dtype=str)
+
+    # Clean whitespace and drop empty labels
+    labels_arr = np.array([str(x).strip() for x in labels_arr])
+    labels_arr = labels_arr[labels_arr != '']
+
+    n_emb = len(df_pm)
+
+    # Diagnostic info to help find origin of mismatch
+    print(f"Debug: embeddings length = {n_emb}")
+    try:
+        if 'distance_matrix' in locals() and distance_matrix is not None:
+            print(f"Debug: distance_matrix shape = {np.array(distance_matrix).shape}")
+    except Exception:
+        pass
+    try:
+        if 'features' in locals() and features is not None:
+            try:
+                print(f"Debug: features shape = {features.shape}")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Strict check: labels must match number of embeddings. Fail early with clear message to let user fix data.
+    if len(labels_arr) != n_emb:
+        details = []
+        details.append(f"embeddings_len={n_emb}")
+        details.append(f"labels_len={len(labels_arr)}")
+        if 'distance_matrix' in locals() and distance_matrix is not None:
+            details.append(f"distance_matrix_shape={np.array(distance_matrix).shape}")
+        if 'features' in locals() and features is not None:
+            try:
+                details.append(f"features_shape={features.shape}")
+            except Exception:
+                pass
+        detail_msg = "; ".join(details)
+        raise ValueError(f"Mismatch between number of embeddings and labels. {detail_msg}. Please ensure your labels correspond to the rows/columns of your input distance/features.")
+
+    df_pm['proteins_id'] = labels_arr
 
     if opt.rotate:
         idx_root = np.where(df_pm['proteins_id'] == str(opt.iroot))[0][0]

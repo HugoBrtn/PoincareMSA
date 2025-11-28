@@ -260,11 +260,21 @@ def compute_rfa(features, mode='features', k_neighbours=15, distfn='sym',
         KNN = features    
 
     if distlocal == 'minkowski':
-        # sigma = np.mean(features)
-        S = np.exp(-KNN / (sigma*features.size(1)))
-        # sigma_std = (np.max(np.array(KNN[KNN > 0])))**2
-        # print(sigma_std)
-        # S = np.exp(-KNN / (2*sigma*sigma_std))
+        # When features are available, normalize by feature dimensionality as before.
+        # If only a precomputed distance matrix was provided (features is None),
+        # fall back to a simple normalization to avoid attribute errors.
+        if features is not None:
+            # features might be a torch Tensor or numpy array
+            try:
+                n_feat = features.shape[1]
+            except Exception:
+                # fallback if shape is not available
+                n_feat = 1
+            denom = sigma * n_feat
+        else:
+            denom = sigma
+
+        S = np.exp(-KNN / denom)
     else:
         S = np.exp(-KNN / sigma)
 
@@ -356,11 +366,21 @@ def compute_rfa_w_custom_distance(features=None, distance_matrix=None, # mode='f
 
     # Compute the similarity matrix S
     if distlocal == 'minkowski':
-        # sigma = np.mean(features)
-        S = np.exp(-KNN / (sigma*features.size(1)))
-        # sigma_std = (np.max(np.array(KNN[KNN > 0])))**2
-        # print(sigma_std)
-        # S = np.exp(-KNN / (2*sigma*sigma_std))
+        # When features are available, normalize by feature dimensionality as before.
+        # If only a precomputed distance matrix was provided (features is None),
+        # fall back to a simple normalization to avoid attribute errors.
+        if features is not None:
+            # features might be a torch Tensor or numpy array
+            try:
+                n_feat = features.shape[1]
+            except Exception:
+                # fallback if shape is not available
+                n_feat = 1
+            denom = sigma * n_feat
+        else:
+            denom = sigma
+
+        S = np.exp(-KNN / denom)
     else:
         S = np.exp(-KNN / sigma)
 
@@ -374,7 +394,8 @@ def compute_rfa_w_custom_distance(features=None, distance_matrix=None, # mode='f
     print("Computing RFA...")
     start = timeit.default_timer()
     RFA = np.linalg.inv(L + np.eye(L.shape[0]))
-    RFA[RFA==np.nan] = 0.0
+    # Replace NaNs (if any) with zeros
+    RFA[np.isnan(RFA)] = 0.0
     print(f"RFA computed in {(timeit.default_timer() - start):.2f} sec")
 
     return torch.Tensor(RFA)

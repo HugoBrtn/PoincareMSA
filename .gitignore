@@ -18,4 +18,6 @@ grid_search_results/
 globins_data/
 thioredoxins_data/
 kinases_data/
+distance_matrix/
+RFA_matrix/
 *.pdf
