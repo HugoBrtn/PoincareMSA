@@ -780,10 +780,10 @@ def compute_rfa_w_custom_distance(features=None, distance_matrix=None,
         # When features are available, normalize by feature dimensionality as before.
         # If only a precomputed distance matrix was provided (features is None),
         # fall back to a simple normalization to avoid attribute errors.
-        if features is not None:
+        if features is not None or distance_matrix is not None:
             # features might be a torch Tensor or numpy array
             try:
-                n_feat = features.shape[1]
+                n_feat = features.shape[1] if features is not None else distance_matrix.shape[1]
             except Exception:
                 # fallback if shape is not available
                 n_feat = 1
