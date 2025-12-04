@@ -8,6 +8,7 @@
 import numpy as np
 import timeit
 from torch.utils.data import DataLoader
+from torch import Generator
 from poincare_maps import plotPoincareDisc, plotTraining
 from tqdm import tqdm
 
@@ -23,9 +24,10 @@ def train(
     args, 
     fout=None,
     earlystop=0.0,
+    seed = 1,
     ):
 
-    loader = DataLoader(data, batch_size=args.batchsize, shuffle=True)
+    loader = DataLoader(data, batch_size=args.batchsize, shuffle=True, generator=Generator().manual_seed(seed))
 
     pbar = tqdm(range(args.epochs), ncols=80)
 

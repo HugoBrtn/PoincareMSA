@@ -232,7 +232,7 @@ def poincare_map(opt):
         distfn=opt.distfn,
         distlocal= opt.distlocal,
         connected=opt.connected,
-        sigma=opt.sigma
+        sigma=opt.sigma,
         )
     logger.debug("RFA tensor shape: %s", getattr(RFA, 'shape', None))
     if opt.batchsize < 0:
@@ -269,7 +269,7 @@ def poincare_map(opt):
     # train predictor
     logger.info("Starting training...")
     embeddings, loss, epoch = train(
-        predictor, dataset, optimizer, opt, fout=fout, earlystop=opt.earlystop
+        predictor, dataset, optimizer, opt, fout=fout, earlystop=opt.earlystop, seed =opt.seed
     )
 
     df_pm = pd.DataFrame(embeddings, columns=["pm1", "pm2"])

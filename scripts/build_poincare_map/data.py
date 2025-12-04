@@ -650,7 +650,8 @@ def compute_rfa(features, mode='features', k_neighbours=15, distfn='sym',
                                k_neighbours,
                                mode='distance',
                                metric=distlocal,
-                               include_self=False).toarray()
+                               include_self=False,
+                               ).toarray()
 
         if 'sym' in distfn.lower():
             KNN = np.maximum(KNN, KNN.T)
@@ -704,6 +705,7 @@ def compute_rfa(features, mode='features', k_neighbours=15, distfn='sym',
 def compute_rfa_w_custom_distance(features=None, distance_matrix=None,
                                   k_neighbours=15, distfn='sym', connected=False,
                                   sigma=1.0, distlocal='minkowski', output_path=None):
+                                  
     """
     Computes the target RFA similarity matrix. The RFA matrix of
     similarities relates to the commute time between pairs of nodes, and it is
@@ -747,7 +749,8 @@ def compute_rfa_w_custom_distance(features=None, distance_matrix=None,
                                k_neighbours,
                                mode='distance',
                                metric=metric,
-                               include_self=False).toarray()
+                               include_self=False,
+                               ).toarray()
         # Symmetrize the KNN matrix
         if 'sym' in distfn.lower():
             KNN = np.maximum(KNN, KNN.T)
