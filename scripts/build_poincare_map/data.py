@@ -250,9 +250,13 @@ def append_point_to_feature_and_distance(
     return out_info
 
 
-def find_k_neighbors_for_new_point(features_path, new_feature, k=5, labels_path=None, metric='euclidean'):
+def find_k_neighbors_for_new_point(features_path, new_feature, k=5, labels_path=None, metric=None, distlocal=None):
     """Find the k nearest neighbors (indices and distances) of a new feature
     vector among the existing features stored in `features_path`.
+
+    This function now tries to use the same distance metric handling as the
+    main pipeline: prefer the ``distlocal`` argument (used by the main
+    computation), otherwise fall back to the legacy ``metric`` parameter.
 
     Parameters
     - features_path: path to CSV with shape (n, d)
@@ -260,7 +264,10 @@ def find_k_neighbors_for_new_point(features_path, new_feature, k=5, labels_path=
     - k: number of neighbors to return
     - labels_path: optional path to a labels CSV (one id per row). If provided,
       the returned neighbors will include the corresponding protein_id.
-    - metric: distance metric passed to sklearn.metrics.pairwise_distances
+    - metric: legacy name for distance metric passed to
+      sklearn.metrics.pairwise_distances (kept for backward compatibility)
+    - distlocal: preferred name matching the CLI/main pipeline (e.g. 'minkowski'
+      or 'cosine'). If provided, this will be used in preference to ``metric``.
 
     Returns a list of dicts: [{'index': int, 'distance': float, 'protein_id': str|None}, ...]
     """
@@ -284,8 +291,14 @@ def find_k_neighbors_for_new_point(features_path, new_feature, k=5, labels_path=
     if nf.shape[0] != X.shape[1]:
         raise ValueError(f"New feature dimensionality ({nf.shape[0]}) does not match features ({X.shape[1]})")
 
-    # Compute distances
-    dists = pairwise_distances(X, nf.reshape(1, -1), metric=metric).reshape(-1)
+    # Decide which metric to use: prefer distlocal (pipeline name), then metric,
+    # then default to 'euclidean'
+    chosen_metric = distlocal if distlocal is not None else (metric if metric is not None else 'euclidean')
+
+    # Compute distances using sklearn's pairwise_distances which is compatible
+    # with the metrics used by kneighbors_graph in the main pipeline.
+    # This ensures the same behaviour for 'minkowski' or 'cosine'.
+    dists = pairwise_distances(X, nf.reshape(1, -1), metric=chosen_metric).reshape(-1)
     idx_sorted = np.argsort(dists)[:k]
 
     # Load labels if available
