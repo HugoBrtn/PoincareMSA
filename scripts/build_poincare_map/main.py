@@ -225,8 +225,50 @@ def poincare_map(opt):
     #     tree_levels = None
 
     # compute matrix of RFA similarities
+    try:
+        # First try a pandas read assuming there may be an index column.
+        # However pandas by default treats the first row as header which can
+        # incorrectly drop one data row if the file has no header. To detect
+        # that case we compare the dataframe rowcount to the raw file linecount
+        # and fall back to a header-less read if they disagree.
+        df = pd.read_csv(opt.distance_matrix, index_col=0)
+        # count raw lines in file to detect header misinterpretation
+        try:
+            with open(opt.distance_matrix, 'r') as fh:
+                raw_lines = sum(1 for _ in fh)
+        except Exception:
+            raw_lines = None
+
+        # If pandas read appears to have consumed a header (raw_lines == df.shape[0] + 1)
+        # then re-read without header to preserve all numeric rows.
+        if raw_lines is not None and raw_lines == df.shape[0] + 1:
+            df = pd.read_csv(opt.distance_matrix, header=None)
+
+        # If the CSV appears square, use it; otherwise try numeric loadtxt fallback
+        if df.shape[0] == df.shape[1]:
+            distance_matrix = df.values
+            if opt.labels is None:
+                # If the dataframe had an index, use it; otherwise generate string indices
+                try:
+                    labels = df.index.astype(str).to_numpy()
+                except Exception:
+                    labels = np.array([str(i) for i in range(distance_matrix.shape[0])])
+                # Save labels to matrices_output_path so downstream code can find them
+                if opt.matrices_output_path is not None:
+                    os.makedirs(opt.matrices_output_path, exist_ok=True)
+                    labels_path = os.path.join(opt.matrices_output_path, "labels.csv")
+                    np.savetxt(labels_path, labels, delimiter=",", fmt="%s")
+                    logger.info("labels CSV file saved to %s", labels_path)
+        else:
+            # Not a square dataframe — fallback to numpy load
+            distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
+    except Exception:
+        # Fallback: plain numeric CSV
+        distance_matrix = np.loadtxt(opt.distance_matrix, delimiter=',')
+
     RFA = compute_rfa(
         features,
+        distance_matrix,
         mode=opt.mode,
         k_neighbours=opt.knn,
         distfn=opt.distfn,

@@ -69,6 +69,7 @@ This automatically installs a CPU-compatible version.
 Some files used by PoincaréMSA (e.g., embeddings) require Git LFS.
 
 **1.Install Git LFS**
+
 Linux:
 ```
 sudo apt update
@@ -127,6 +128,17 @@ which will create an output `.csv` file with protein coordinates in the final pr
 
 # Examples of use
 We provide several examples of PoincareMSA usage for different protien families in the `examples` folder. Each example comes with a bash script alloqing to reproduce the results starting from MSA and labels contained in `data`.
+
+## Method chcoice scripts
+These are three Jupyter notebooks named PoincareMSA_kinases_method_choice.ipynb, PoincareMSA_globins_method_choice.ipynb and PoincareMSA_thioredoxins_method_choice.ipynb.
+These scripts generate Poincaré maps using different types of input. The methods available are:
+- distance_matrix: from a distance matrix (.csv file).
+- RFA_matrix: from an RFA matrix (.csv file).
+- pssm: from an mfasta file.
+- plm: from an ankh base embedding file.
+- plm_aae: from an autoencoder embedding file.
+
+
 
 # References
 When using PoincaréMSA, please cite the following research: 

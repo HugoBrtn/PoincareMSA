@@ -10,7 +10,7 @@ radical_sam_data/
 globins_data/
 kinases_data/
 thioredoxins_data/
-embeddings/
+#embeddings/
 annotations/
 scoring_matrices/*.csv
 comparisons_not_publised/*.pdf
