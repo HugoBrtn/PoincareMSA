@@ -14,6 +14,10 @@ computation routines live in `data.py` and optimization/Model code in
 `model.py` / `train.py`.
 """
 
+#########################################################################################
+############################  LIBRAIRIES & IMPORT  ######################################
+#########################################################################################
+
 import argparse
 import logging
 import os
@@ -36,10 +40,22 @@ from rsgd import RiemannianSGD
 from train import train
 from poincare_maps import plotPoincareDisc
 
+
+
+#########################################################################################
+######################################  SETUP  ##########################################
+#########################################################################################
+
 # Minimal logging setup used instead of prints to make messages easier to
 # filter/redirect in downstream tools.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+#########################################################################################
+###############################  USEFULL FUNCTIONS  #####################################
+#########################################################################################
+
 
 ### This function was added by Tatina Galochkina in order to improve reproducibility of the restuls 
 def set_seed(seed: int = 42) -> None:
@@ -79,8 +95,6 @@ def create_output_name(opt) -> Tuple[str, str]:
     )
 
     return titlename, filename
-
-
 
 #def get_tree_colors(opt, labels, tree_cl_name):
 #    pkl_file = open(f'{tree_cl_name}.pkl', 'rb')
@@ -369,18 +383,29 @@ def poincare_map(opt):
     #                        coldict=color_dict, file_name=f'{fout}_rotate_cut{t}', d1=8.5, d2=8.0, bbox=(1.2, 1.), leg=leg)
 
 
+
+
+#########################################################################################
+##################################### MAIN FUNCTION #####################################
+#########################################################################################
+
 def poincare_map_w_custom_distance(opt):
     # read and preprocess the dataset
 # Configure device and seed
     opt.cuda = torch.cuda.is_available()
     logger.info("CUDA available: %s", opt.cuda)
     set_seed(opt.seed)
-#    torch.manual_seed(opt.seed)
+    torch.manual_seed(opt.seed)
 
-    ############################################################################################
-    if opt.method != "RFA_matrix" : # Condition pour utiisation préalable de matrice de rfa ici
-    ############################################################################################
+##########################
+## I - Data preparation ##
+##########################
 
+    if opt.method != "RFA_matrix" :
+
+#------------------------------------
+# I - a) With an mfasta file (pssm) -
+#------------------------------------
         # Features assignment only if a precomputed distance matrix is not provided
         if opt.distance_matrix is None and opt.plm_embedding == 'False' :
             features, labels = prepare_data(opt.input_path, withroot=opt.rotate)
@@ -397,6 +422,10 @@ def poincare_map_w_custom_distance(opt):
             logger.info("labels CSV file saved to %s", labels_path)
 
             distance_matrix = None
+
+#--------------------------------------
+# I - b) With an embedding file (plm) -
+#--------------------------------------
         elif opt.distance_matrix is None and opt.plm_embedding == 'True':
             features, labels = prepare_embedding_data(opt.input_path, withroot=opt.rotate)
             logger.debug("labels: %s", labels)
@@ -412,8 +441,11 @@ def poincare_map_w_custom_distance(opt):
             logger.info("labels CSV file saved to %s", labels_path)
 
             distance_matrix = None
+
+#--------------------------------
+# I - c) With a distance matrix -
+#--------------------------------
         else:
-            print("on passe la")
             # If a user provides a precomputed distance matrix we try to read it robustly.
             # Accepts CSVs with an index/column labels (square dataframes) or plain numeric CSVs.
             features = None
@@ -493,9 +525,6 @@ def poincare_map_w_custom_distance(opt):
                 if labels is not None and len(labels) != dm_shape[0]:
                     raise ValueError(f"Labels length ({len(labels)}) does not match distance_matrix size ({dm_shape[0]}). Please provide matching labels or a correctly sized distance matrix.")
 
-
-
-
     # if not (opt.tree is None):
     #     tree_levels, color_dict = get_tree_colors(
     #         opt, labels,
@@ -504,8 +533,15 @@ def poincare_map_w_custom_distance(opt):
     #     color_dict = None
     #     tree_levels = None
 
-    # compute matrix of RFA similarities
 
+#################################################
+## II - Computation of RFA similarities matrix ##
+#################################################
+
+#---------------------------------------------
+# II - a) Using pssm, plm or distance matrix -
+#---------------------------------------------
+    if opt.method != "RFA_matrix" :
         RFA = compute_rfa_w_custom_distance(
             features,
             distance_matrix,
@@ -523,6 +559,9 @@ def poincare_map_w_custom_distance(opt):
         np.savetxt(RFA_matrix_path, RFA, delimiter=",")
         logger.info("RFA matrix CSV file saved to %s", RFA_matrix_path)
 
+#---------------------------
+# II - b) Using RFA matrix -
+#---------------------------
     else:
         # If the user asked to use a precomputed RFA matrix, load it from disk
         RFA_matrix_path = os.path.join(opt.matrices_output_path, "RFA_matrix.csv")
@@ -535,8 +574,9 @@ def poincare_map_w_custom_distance(opt):
         labels = np.loadtxt(labels_path, delimiter=",", dtype=str)
         logger.info("labels CSV file loaded from %s", labels_path)
 
-    ############################################################################################
-
+#---------------------------------------
+# II - c) Tensorization of RFA  matrix -
+#---------------------------------------
     # Continue using RFA as a tensor in the rest of the code
     if opt.batchsize < 0:
         opt.batchsize = min(512, int(len(RFA) / 10))
@@ -553,7 +593,14 @@ def poincare_map_w_custom_distance(opt):
 
     dataset = TensorDataset(indices, RFA)
 
-    # instantiate our Embedding predictor
+
+######################################
+## III - Instanciation of instances ##
+######################################
+
+#----------------------------------------------------
+# III - a) Instantiation of the embedding predictor -
+#----------------------------------------------------
     predictor = PoincareEmbedding(
         len(dataset),
         opt.dim,
@@ -565,11 +612,17 @@ def poincare_map_w_custom_distance(opt):
         cuda=opt.cuda
         )
 
-    # instantiate the Riemannian optimizer 
+#------------------------------------------
+# III - b) Instantiation of the optimizer -
+#------------------------------------------
     t_start = timeit.default_timer()
     optimizer = RiemannianSGD(predictor.parameters(), lr=opt.lr)
 
-    # train predictor
+
+####################################
+## IV - Training of the predictor ##
+####################################
+
     logger.info('Starting training...')
     embeddings, loss, epoch = train(
         predictor,
@@ -581,6 +634,11 @@ def poincare_map_w_custom_distance(opt):
         )
 
     df_pm = pd.DataFrame(embeddings, columns=["pm1", "pm2"])
+
+
+#############################################
+## V - Loading & preparation of the labels ##
+#############################################
 
     # Prefer the labels variable populated earlier (when distance matrix provided we try to infer/save labels).
     if 'labels' in locals() and labels is not None:
@@ -639,10 +697,18 @@ def poincare_map_w_custom_distance(opt):
 
     df_pm['proteins_id'] = labels_arr
 
+
+##############################################
+## VI - Creation of the final Poincarre csv ##
+##############################################
+
+#-----------------------------------------------
+# VI - a) Changing the root if one is provided -
+#-----------------------------------------------
     if opt.rotate:
         idx_root = np.where(df_pm["proteins_id"] == str(opt.iroot))[0][0]
         logger.info("Recentering poincare disk at %s", opt.iroot)
-#        print("root index: ", idx_root)
+        print("root index: ", idx_root)
         poincare_coord_rot = poincare_translation(
             -embeddings[idx_root, :], embeddings)
         df_rot = df_pm.copy()
@@ -650,8 +716,14 @@ def poincare_map_w_custom_distance(opt):
         df_rot['pm2'] = poincare_coord_rot[:, 1]
         df_rot.to_csv(fout + '.csv', sep=',', index=False)
 
+#---------------------------
+# VI - b) No root provided -
+#---------------------------
     else:
         df_pm.to_csv(fout + '.csv', sep=',', index=False)
+
+
+
 
     t = timeit.default_timer() - t_start
     titlename = f"\nloss = {loss:.3e}\ntime = {t/60:.3f} min"
