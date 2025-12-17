@@ -594,9 +594,9 @@ def poincare_map_w_custom_distance(opt):
     dataset = TensorDataset(indices, RFA)
 
 
-######################################
-## III - Instanciation of instances ##
-######################################
+################################################## 
+## III - Instanciation of predictor & optimizer ##
+##################################################
 
 #----------------------------------------------------
 # III - a) Instantiation of the embedding predictor -
