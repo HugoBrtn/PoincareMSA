@@ -534,9 +534,9 @@ def poincare_map_w_custom_distance(opt):
     #     tree_levels = None
 
 
-#################################################
-## II - Computation of RFA similarities matrix ##
-#################################################
+#########################################################################
+## II - Creation of KNN Graph & Computation of RFA similarities matrix ##
+#########################################################################
 
 #---------------------------------------------
 # II - a) Using pssm, plm or distance matrix -
@@ -696,7 +696,7 @@ def poincare_map_w_custom_distance(opt):
         )
 
     df_pm['proteins_id'] = labels_arr
-
+    df_pm = df_pm.sort_values(by='proteins_id')
 
 ##############################################
 ## VI - Creation of the final Poincarre csv ##
