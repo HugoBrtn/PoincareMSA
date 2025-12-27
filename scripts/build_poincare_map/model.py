@@ -433,27 +433,81 @@ class PoincareEmbedding(nn.Module):
                 )
 
         return new.detach().cpu().numpy().reshape(self.dim,), losses
-    
-    def hyperbolic_barycenter(self, points, weights, n_steps=100, lr=0.1):
+    def _squared_norm(self, x, dim=-1, keepdim=True):
+        return (x * x).sum(dim=dim, keepdim=keepdim)
+
+    def _mobius_add(self, x, y, eps_small=1e-8):
+        x2 = self._squared_norm(x, keepdim=True)
+        y2 = self._squared_norm(y, keepdim=True)
+        xy = (x * y).sum(dim=-1, keepdim=True)
+        num = (1 + 2 * xy + y2) * x + (1 - x2) * y
+        den = 1 + 2 * xy + x2 * y2
+        return num / (den + eps_small)
+
+    def _mobius_neg(self, x):
+        return -x
+
+    def _artanh(self, x):
+        x = x.clamp(min=-1 + 1e-6, max=1 - 1e-6)
+        return 0.5 * (torch.log1p(x) - torch.log1p(-x))
+
+    def _lambda_x(self, x):
+        norm2 = self._squared_norm(x, keepdim=True)
+        return 2.0 / (1.0 - norm2 + 1e-8)
+
+    def _log_map(self, x, y):
+        # x: (1, dim) ; y: (k, dim)
+        u = self._mobius_add(self._mobius_neg(x), y)
+        norm_u = u.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+        lam = self._lambda_x(x)
+        coef = (2.0 / lam) * self._artanh(norm_u) / (norm_u + 1e-8)
+        return coef * u
+
+    def _exp_map(self, x, v):
+        norm_v = v.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+        lam = self._lambda_x(x)
+        second = torch.tanh(lam * norm_v / 2.0) * (v / (norm_v + 1e-8))
+        return self._mobius_add(x, second)
+
+    def _project_to_ball(self, x, max_norm=1 - 1e-6):
+        norm = x.norm(p=2, dim=-1, keepdim=True)
+        mask = norm >= max_norm
+        if mask.any():
+            x = x / norm * max_norm
+        return x
+
+    def hyperbolic_barycenter(self, points, weights=None, n_steps=100, tol=1e-6, alpha=1.0, device=None):
         """
-        Compute weighted Fréchet mean in the Poincaré ball.
+        Compute weighted Fréchet mean in the Poincaré ball using log/exp maps.
+        points: (k, dim) tensor, weights: (k,) tensor or None.
+        Returns x of shape (1, dim)
         """
-        x = points.mean(dim=0, keepdim=True)
+        if device is None:
+            device = points.device
+        points = points.to(device)
+        k, dim = points.shape
+        if weights is None:
+            weights = torch.ones(k, device=device) / float(k)
+        else:
+            weights = weights.to(device).float()
+            if weights.sum() <= 0:
+                weights = torch.ones_like(weights) / float(k)
+            else:
+                weights = weights / weights.sum()
 
-        for _ in range(n_steps):
-            # gradients in tangent space
-            grad = torch.zeros_like(x)
+        # init: weighted euclidean mean projected into ball
+        x = (weights.view(-1, 1) * points).sum(dim=0, keepdim=True)
+        x = self._project_to_ball(x)
 
-            for p, w in zip(points, weights):
-                d = self.dist().apply(x.unsqueeze(0), p.view(1,1,-1)).squeeze()
-                grad += w * (x - p) / torch.clamp(d, min=1e-5)
-
-            x = x - lr * grad
-
-            # retract
-            norm = x.norm()
-            if norm >= boundary:
-                x.mul_((boundary - 1e-8) / norm)
+        for i in range(n_steps):
+            v = self._log_map(x, points)  # (k, dim)
+            v_bar = (weights.view(-1, 1) * v).sum(dim=0, keepdim=True)
+            norm_vbar = v_bar.norm()
+            if norm_vbar < tol:
+                break
+            x_new = self._exp_map(x, alpha * v_bar)
+            x_new = self._project_to_ball(x_new)
+            x = x_new
 
         return x
 
