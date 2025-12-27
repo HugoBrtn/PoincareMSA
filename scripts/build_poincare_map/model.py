@@ -161,6 +161,7 @@ class PoincareEmbedding(nn.Module):
                                   n_steps: int = 200,
                                   lr: float = 0.1,
                                   init: str = 'random',
+                                  init_vec=None,
                                   device: str = None):
         """
         Infers an embedding vector for a single new point given its target
@@ -228,14 +229,35 @@ class PoincareEmbedding(nn.Module):
             target_t = target_t / target_t.sum()
 
         # initialize new embedding parameter
-        new = torch.zeros((1, self.dim), dtype=torch.float32, device=device)
-        if init == 'random':
-            new.uniform_(-1e-4, 1e-4)
-        elif init == 'zeros':
-            pass
+        # init priority: init_vec (explicit) > 'barycenter' > random/zeros
+        if init_vec is not None:
+            # accept numpy array or torch tensor
+            if not isinstance(init_vec, torch.Tensor):
+                v = torch.tensor(init_vec, dtype=torch.float32, device=device).reshape(1, -1)
+            else:
+                v = init_vec.to(device).float().reshape(1, -1)
+            v = self._project_to_ball(v)
+            new = torch.nn.Parameter(v)
+        elif init == 'barycenter':
+            # compute top-k neighbors from target and compute barycenter as warm start
+            old_size = old_embs.shape[0]
+            k = min(50, old_size)
+            topk = torch.topk(target_t, k=k).indices
+            neighbor_embs = old_embs[topk]
+            neighbor_w = target_t[topk]
+            neighbor_w = neighbor_w / neighbor_w.sum()
+            v = self.hyperbolic_barycenter(neighbor_embs, neighbor_w, n_steps=100, tol=1e-7, alpha=1.0, device=device)
+            v = v.to(device).float()
+            new = torch.nn.Parameter(v)
         else:
-            raise ValueError("init must be 'random' or 'zeros'")
-        new = torch.nn.Parameter(new)
+            new = torch.zeros((1, self.dim), dtype=torch.float32, device=device)
+            if init == 'random':
+                new.uniform_(-1e-4, 1e-4)
+            elif init == 'zeros':
+                pass
+            else:
+                raise ValueError("init must be 'random', 'zeros' or 'barycenter' (or provide init_vec)")
+            new = torch.nn.Parameter(new)
 
         optim = torch.optim.SGD([new], lr=lr)
 
@@ -355,13 +377,25 @@ class PoincareEmbedding(nn.Module):
         neighbor_w = neighbor_w / neighbor_w.sum()  # normalized weights
 
         # initialize new point
-        new = torch.zeros((1, self.dim), device=device)
-        if init == 'random':
-            new.uniform_(-1e-4, 1e-4)
-        elif init != 'zeros':
-            raise ValueError("init must be 'random' or 'zeros'")
-
-        new = torch.nn.Parameter(new)
+        # support init == 'random'|'zeros'|'barycenter' or an init_vec provided via closure (not arg here)
+        if init == 'barycenter':
+            # compute barycenter from top-k neighbors
+            k_local = min(max(1, k), target.numel())
+            topk = torch.topk(target, k=k_local).indices
+            neighbor_embs = old_embs[topk]
+            neighbor_w = target[topk]
+            neighbor_w = neighbor_w / neighbor_w.sum()
+            v = self.hyperbolic_barycenter(neighbor_embs, neighbor_w, n_steps=100, tol=1e-7, alpha=1.0, device=device)
+            new = torch.nn.Parameter(v)
+        else:
+            new = torch.zeros((1, self.dim), device=device)
+            if init == 'random':
+                new.uniform_(-1e-4, 1e-4)
+            elif init == 'zeros':
+                pass
+            else:
+                raise ValueError("init must be 'random', 'zeros' or 'barycenter'")
+            new = torch.nn.Parameter(new)
         optimizer = torch.optim.SGD([new], lr=lr)
 
         losses = []
