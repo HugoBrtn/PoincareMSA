@@ -696,7 +696,7 @@ def poincare_map_w_custom_distance(opt):
         )
 
     df_pm['proteins_id'] = labels_arr
-    df_pm = df_pm.sort_values(by='proteins_id')
+    # df_pm = df_pm.sort_values(by='proteins_id')
 
 ##############################################
 ## VI - Creation of the final Poincarre csv ##

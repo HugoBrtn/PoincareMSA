@@ -76,6 +76,7 @@ def read_embeddings(path_embedding, path_annotation=None, withroot=True, ordered
     Prepare the plot data by concatenating the two dataframes.
     """
     df_embeddings = pd.read_csv(path_embedding)
+    #df_embeddings['proteins_id'] = pd.to_numeric(df_embeddings['proteins_id'], errors='raise').astype(int)
     df_embeddings.sort_values(["proteins_id"], ignore_index=True, ascending=True, inplace=True)
     #If an annotation file is provided
     if os.path.isfile(path_annotation):

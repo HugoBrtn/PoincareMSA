@@ -516,10 +516,13 @@ class PoincareEmbedding(nn.Module):
         points: (k, dim) tensor, weights: (k,) tensor or None.
         Returns x of shape (1, dim)
         """
+        # device and tensor setup
         if device is None:
             device = points.device
         points = points.to(device)
         k, dim = points.shape
+
+        # weights: ensure a valid normalized weight vector
         if weights is None:
             weights = torch.ones(k, device=device) / float(k)
         else:
@@ -529,17 +532,32 @@ class PoincareEmbedding(nn.Module):
             else:
                 weights = weights / weights.sum()
 
-        # init: weighted euclidean mean projected into ball
+        # Initialization: Euclidean weighted mean projected into the Poincaré ball.
+        # This provides a stable starting point close to the true barycenter.
         x = (weights.view(-1, 1) * points).sum(dim=0, keepdim=True)
         x = self._project_to_ball(x)
 
+        # Iteratively compute the Riemannian (Fréchet) mean by mapping points
+        # to the tangent space at the current estimate `x` via the log map,
+        # taking the weighted Euclidean mean in that tangent space, and
+        # mapping back to the manifold with the exp map. This is a standard
+        # and stable procedure for barycenter computation on manifolds.
         for i in range(n_steps):
+            # map each point y_i to the tangent space at x: v_i = log_x(y_i)
             v = self._log_map(x, points)  # (k, dim)
+
+            # weighted average in the tangent space
             v_bar = (weights.view(-1, 1) * v).sum(dim=0, keepdim=True)
+
+            # check convergence: if the mean tangent vector is near zero, stop
             norm_vbar = v_bar.norm()
             if norm_vbar < tol:
                 break
+
+            # move along the averaged tangent vector back to the manifold
             x_new = self._exp_map(x, alpha * v_bar)
+
+            # numerical guard: ensure we stay inside the ball
             x_new = self._project_to_ball(x_new)
             x = x_new
 
