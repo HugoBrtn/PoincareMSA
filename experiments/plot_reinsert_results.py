@@ -45,59 +45,162 @@ def plot_results(path_csv: str, out_path: str, show: bool = False):
         df_time = df[time_cols].melt(var_name='method', value_name='time_s')
         df_time = df_time.dropna(subset=['time_s'])
 
-    # Create a figure with rows:
-    # - distances linear (always)
-    # - distances log scale (always)
-    # - times (if present)
-    nrows = 2 + (1 if df_time is not None else 0)
-    fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(9, 4 * nrows))
-    # ensure axes is a flat list
-    if nrows == 1:
-        axes = [axes]
+    out_dir = os.path.dirname(out_path) or '.'
+    os.makedirs(out_dir, exist_ok=True)
 
-    # First: distances (linear)
-    ax_dist_lin = axes[0]
-    sns.boxplot(x='method', y='distance', data=df_m, ax=ax_dist_lin)
-    ax_dist_lin.set_title('Reinsertion benchmark: hyperbolic distance to original embedding (linear)')
-    ax_dist_lin.set_xlabel('Method')
-    ax_dist_lin.set_ylabel('Poincaré distance')
+    # Save distance plot (linear)
+    fig1, ax1 = plt.subplots(figsize=(8, 5))
+    sns.boxplot(x='method', y='distance', data=df_m, ax=ax1)
+    ax1.set_title('Reinsertion benchmark: hyperbolic distance to original embedding (linear)')
+    ax1.set_xlabel('Method')
+    ax1.set_ylabel('Poincaré distance')
+    fig1.tight_layout()
+    out1 = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_distance_linear.png')
+    fig1.savefig(out1, dpi=200)
+    print(f'Saved distance linear boxplot to {out1}')
+    plt.close(fig1)
 
-    # Second: distances (log scale)
-    ax_dist_log = axes[1]
-    sns.boxplot(x='method', y='distance', data=df_m, ax=ax_dist_log)
-    ax_dist_log.set_title('Reinsertion benchmark: hyperbolic distance to original embedding (log scale)')
-    ax_dist_log.set_xlabel('Method')
-    ax_dist_log.set_ylabel('Poincaré distance (log)')
+    # Save distance plot (log)
+    fig2, ax2 = plt.subplots(figsize=(8, 5))
+    sns.boxplot(x='method', y='distance', data=df_m, ax=ax2)
+    ax2.set_title('Reinsertion benchmark: hyperbolic distance to original embedding (log scale)')
+    ax2.set_xlabel('Method')
+    ax2.set_ylabel('Poincaré distance (log)')
     try:
-        ax_dist_log.set_yscale('log')
+        ax2.set_yscale('log')
     except Exception:
         pass
+    fig2.tight_layout()
+    out2 = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_distance_log.png')
+    fig2.savefig(out2, dpi=200)
+    print(f'Saved distance log boxplot to {out2}')
+    plt.close(fig2)
 
-    # Third: times (optional)
-    if df_time is not None:
-        ax_time = axes[2]
-        sns.boxplot(x='method', y='time_s', data=df_time, ax=ax_time)
-        ax_time.set_title('Reinsertion benchmark: runtime per method')
-        ax_time.set_xlabel('Method')
-        ax_time.set_ylabel('Time (s)')
+    # Save time plot (if present)
+    if df_time is not None and not df_time.empty:
+        # times (linear)
+        fig3, ax3 = plt.subplots(figsize=(8, 5))
+        sns.boxplot(x='method', y='time_s', data=df_time, ax=ax3)
+        ax3.set_title('Reinsertion benchmark: runtime per method (linear)')
+        ax3.set_xlabel('Method')
+        ax3.set_ylabel('Time (s)')
+        fig3.tight_layout()
+        out3 = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_times.png')
+        fig3.savefig(out3, dpi=200)
+        print(f'Saved time boxplot to {out3}')
+        plt.close(fig3)
+
+        # times (log)
+        fig3l, ax3l = plt.subplots(figsize=(8, 5))
+        sns.boxplot(x='method', y='time_s', data=df_time, ax=ax3l)
+        ax3l.set_title('Reinsertion benchmark: runtime per method (log scale)')
+        ax3l.set_xlabel('Method')
+        ax3l.set_ylabel('Time (s)')
         try:
-            ax_time.set_yscale('log')
+            ax3l.set_yscale('log')
+            out3l = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_times_log.png')
+            fig3l.tight_layout()
+            fig3l.savefig(out3l, dpi=200)
+            print(f'Saved time (log) boxplot to {out3l}')
         except Exception:
-            pass
+            out3l = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_times_log.png')
+            fig3l.text(0.5, 0.5, 'Cannot plot time on log scale (non-positive values)', ha='center', va='center')
+            fig3l.axis('off')
+            fig3l.tight_layout()
+            fig3l.savefig(out3l, dpi=200)
+            print(f'Created placeholder time-log image at {out3l} (non-positive values)')
+        plt.close(fig3l)
 
-    plt.tight_layout()
-    os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
-    plt.savefig(out_path, dpi=200)
-    print(f'Saved boxplot to {out_path}')
+    # Qlocal / Qglobal per-method difference plots: Q_orig - Q_method for each method
+    method_map = [
+        ('baryinit', 'Qlocal_new_baryinit', 'Qglobal_new_baryinit', 'barycenter_init'),
+        ('infer_bary', 'Qlocal_new_infer_bary', 'Qglobal_new_infer_bary', 'infer_bary'),
+        ('infer_initvec', 'Qlocal_new_infer_initvec', 'Qglobal_new_infer_initvec', 'infer_initvec'),
+        ('train_single', 'Qlocal_new_train_single', 'Qglobal_new_train_single', 'train_single'),
+    ]
+
+    # Qlocal differences
+    qlocal_rows = []
+    for key, qlocal_col, qglobal_col, label in method_map:
+        if 'Qlocal_orig' in df.columns and qlocal_col in df.columns:
+            # compute diff = Qlocal_orig - Qlocal_method
+            series_orig = df['Qlocal_orig']
+            series_m = df[qlocal_col]
+            diff = series_orig - series_m
+            # keep non-NaN diffs
+            diff = diff.dropna()
+            for v in diff.values:
+                qlocal_rows.append({'method': label, 'Qlocal_diff': v})
+
+    if len(qlocal_rows) > 0:
+        df_ql = pd.DataFrame(qlocal_rows)
+        figql, axql = plt.subplots(figsize=(8, 5))
+        sns.boxplot(x='method', y='Qlocal_diff', data=df_ql, ax=axql)
+        axql.set_title('Qlocal difference: Qlocal_orig - Qlocal_method (per method)')
+        axql.set_xlabel('Method')
+        axql.set_ylabel('Qlocal difference')
+        figql.tight_layout()
+        outql = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_Qlocal_diff_by_method.png')
+        figql.savefig(outql, dpi=200)
+        print(f'Saved Qlocal difference boxplot to {outql}')
+        plt.close(figql)
+        # (log-scale Qlocal plot omitted because diffs may be non-positive)
+    else:
+        figql, axql = plt.subplots(figsize=(6, 4))
+        axql.text(0.5, 0.5, 'No Qlocal per-method data available\n(check columns)', ha='center', va='center')
+        axql.axis('off')
+        outql = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_Qlocal_diff_by_method.png')
+        figql.tight_layout()
+        figql.savefig(outql, dpi=200)
+        print(f'Created placeholder Qlocal-diff image at {outql} (no data)')
+        plt.close(figql)
+
+    # Qglobal differences
+    qglobal_rows = []
+    for key, qlocal_col, qglobal_col, label in method_map:
+        if 'Qglobal_orig' in df.columns and qglobal_col in df.columns:
+            series_orig = df['Qglobal_orig']
+            series_m = df[qglobal_col]
+            diff = series_orig - series_m
+            diff = diff.dropna()
+            for v in diff.values:
+                qglobal_rows.append({'method': label, 'Qglobal_diff': v})
+
+    if len(qglobal_rows) > 0:
+        df_qg = pd.DataFrame(qglobal_rows)
+        figqg, axqg = plt.subplots(figsize=(8, 5))
+        sns.boxplot(x='method', y='Qglobal_diff', data=df_qg, ax=axqg)
+        axqg.set_title('Qglobal difference: Qglobal_orig - Qglobal_method (per method)')
+        axqg.set_xlabel('Method')
+        axqg.set_ylabel('Qglobal difference')
+        figqg.tight_layout()
+        outqg = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_Qglobal_diff_by_method.png')
+        figqg.savefig(outqg, dpi=200)
+        print(f'Saved Qglobal difference boxplot to {outqg}')
+        plt.close(figqg)
+        # (log-scale Qglobal plot omitted because diffs may be non-positive)
+    else:
+        figqg, axqg = plt.subplots(figsize=(6, 4))
+        axqg.text(0.5, 0.5, 'No Qglobal per-method data available\n(check columns)', ha='center', va='center')
+        axqg.axis('off')
+        outqg = os.path.join(out_dir, os.path.splitext(os.path.basename(out_path))[0] + '_Qglobal_diff_by_method.png')
+        figqg.tight_layout()
+        figqg.savefig(outqg, dpi=200)
+        print(f'Created placeholder Qglobal-diff image at {outqg} (no data)')
+        plt.close(figqg)
 
     if show:
+        # If interactive display requested, show the distance linear plot
+        fig_show, ax_show = plt.subplots(figsize=(8, 5))
+        sns.boxplot(x='method', y='distance', data=df_m, ax=ax_show)
+        ax_show.set_title('Reinsertion benchmark: hyperbolic distance to original embedding (linear)')
         plt.show()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--in', dest='path_csv', default='experiments/results/reinsert_benchmark.csv')
-    parser.add_argument('--out', dest='out_path', default='experiments/results/reinsert_benchmark_boxplots.png')
+    parser.add_argument('--in', dest='path_csv', default='experiments/results/results_thioredoxins/reinsert_benchmark.csv')
+    parser.add_argument('--out', dest='out_path', default='experiments/results/results_thioredoxins/reinsert_benchmark_boxplots.png')
     parser.add_argument('--show', action='store_true', help='Display the plot interactively')
     args = parser.parse_args()
 

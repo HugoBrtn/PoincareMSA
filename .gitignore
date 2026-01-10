@@ -20,4 +20,7 @@ thioredoxins_data/
 kinases_data/
 distance_matrix/
 RFA_matrix/
+test_add_point_kinases/
+test_add_point_globins/
+test_add_point_thioredoxins/
 *.pdf
