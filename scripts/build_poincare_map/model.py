@@ -510,7 +510,7 @@ class PoincareEmbedding(nn.Module):
             x = x / norm * max_norm
         return x
 
-    def hyperbolic_barycenter(self, points, weights=None, n_steps=100, tol=1e-6, alpha=1.0, device=None):
+    def hyperbolic_barycenter(self, points, weights=None, n_steps=100, tol=1e-6, alpha=1.0, device=None, method='karcher', lr=1e-2):
         """
         Compute weighted Fréchet mean in the Poincaré ball using log/exp maps.
         points: (k, dim) tensor, weights: (k,) tensor or None.
@@ -520,7 +520,19 @@ class PoincareEmbedding(nn.Module):
         if device is None:
             device = points.device
         points = points.to(device)
+        # ensure points are 2D tensor (k, dim)
+        if points.ndim == 1:
+            points = points.unsqueeze(0)
         k, dim = points.shape
+
+        # Project input points into the Poincaré ball if some lie outside.
+        # This avoids surprising behaviour when embeddings are loaded from CSV
+        # without being projected.
+        with torch.no_grad():
+            norms = points.norm(p=2, dim=-1)
+            max_norm = 1.0 - 1e-6
+            if (norms >= max_norm).any():
+                points = self._project_to_ball(points, max_norm=max_norm)
 
         # weights: ensure a valid normalized weight vector
         if weights is None:
@@ -532,10 +544,45 @@ class PoincareEmbedding(nn.Module):
             else:
                 weights = weights / weights.sum()
 
+        # Fast path: if only one point, return it (after projection)
+        if k == 1:
+            return points[:1]
+
         # Initialization: Euclidean weighted mean projected into the Poincaré ball.
         # This provides a stable starting point close to the true barycenter.
         x = (weights.view(-1, 1) * points).sum(dim=0, keepdim=True)
         x = self._project_to_ball(x)
+
+        # Option: alternate method via autograd optimization (often more robust)
+        if method == 'optim':
+            # minimize F(x) = sum_i w_i * d(x, y_i)^2 by optimizing a tangent vector z at 0
+            x0 = torch.zeros((1, dim), device=device)
+            # parameter in tangent space at 0
+            z = torch.zeros((1, dim), device=device, requires_grad=True)
+            optim = torch.optim.Adam([z], lr=lr)
+            for i in range(n_steps):
+                optim.zero_grad()
+                x_curr = self._exp_map(x0, z)  # map to manifold
+                x_rep = x_curr.unsqueeze(0).expand(1, k, dim)
+                pts_rep = points.unsqueeze(0)
+                d = self.dist().apply(x_rep, pts_rep).squeeze(0)
+                loss = (weights * d.pow(2)).sum()
+                loss.backward()
+                optim.step()
+
+                # guard: if x goes outside ball, project back and update z accordingly
+                with torch.no_grad():
+                    x_curr = self._project_to_ball(x_curr)
+                    # update z to log_0(x_curr)
+                    z_new = self._log_map(x0, x_curr).reshape_as(z)
+                    z.data.copy_(z_new.data)
+            x = self._exp_map(x0, z).detach()
+            x = self._project_to_ball(x)
+            return x
+
+        # fall through to 'karcher' (log/exp iterative) method
+        if method != 'karcher':
+            raise ValueError("method must be 'karcher' or 'optim'")
 
         # Iteratively compute the Riemannian (Fréchet) mean by mapping points
         # to the tangent space at the current estimate `x` via the log map,
