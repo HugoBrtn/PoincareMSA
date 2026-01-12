@@ -23,4 +23,5 @@ RFA_matrix/
 test_add_point_kinases/
 test_add_point_globins/
 test_add_point_thioredoxins/
+GridSearch_results/
 *.pdf

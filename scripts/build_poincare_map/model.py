@@ -94,7 +94,9 @@ class PoincareEmbedding(nn.Module):
                  lossfn='klSym',
                  gamma=1.0,
                  cuda=0):
-        super(PoincareEmbedding, self).__init__()
+        # Use implicit super() for Python 3 compatibility and to avoid
+        # issues if the class object is rebound in the importing module.
+        super().__init__()
 
         self.dim = dim
         self.size = size
@@ -165,7 +167,7 @@ class PoincareEmbedding(nn.Module):
                                   device: str = None):
         """
         Infers an embedding vector for a single new point given its target
-        similarity/distribution to the existing corpus.
+        similarity/distribution.
 
         This routine keeps the existing embeddings fixed and optimizes a
         single new embedding so that its predicted distribution (Q) matches

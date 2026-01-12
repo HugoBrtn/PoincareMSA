@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Benchmark de réinsertion :
-- pour une liste d'indices, retire le point (features + embedding)
-- ré-infère le point par plusieurs méthodes
-- calcule les distances hyperboliques entre la position ré-inférée et la position originale
-- stocke les résultats dans un CSV
+Reinsertion benchmark:
+- For a list of indices, remove the point (features + embedding)
+- Re-infer the point using several methods
+- Compute hyperbolic distances between each re-inferred position and the original position
+- Save the results to a CSV file
 
-Usage (depuis la racine du projet) :
+Usage (from the project root):
 python3 scripts/experiments/reinsert_benchmark.py --path_embedding test_add_point_2/PM5sigma=1.00gamma=1.00cosinepca=0_seed4.csv \
     --path_features /home/hugo/Bureau/PoincareMSA/test_add_point_2/features.csv --out results/reinsert_benchmark.csv
 
@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import sys
 
-# Add the project root to Python path
-project_root = "/home/hugo/Bureau/PoincareMSA"
-if project_root not in sys.path:
-    sys.path.append(project_root)
+# # Add the project root to Python path
+# project_root = "/home/hugo/Bureau/PoincareMSA"
+# if project_root not in sys.path:
+#     sys.path.append(project_root)
 
 
 import argparse
