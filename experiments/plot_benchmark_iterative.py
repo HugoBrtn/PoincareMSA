@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot batch reinsertion results (matplotlib / seaborn style matching the
-old benchmark script in experiments/archives/old_benchmark).
+Plot batch reinsertion results.
 
 Reads the CSV produced by `experiments/batch_reinsert.py` and creates boxplots
 for:

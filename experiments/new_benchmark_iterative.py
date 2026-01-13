@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Batch reinsertion benchmark
+Reinsertion benchmark
 
 - Build one full Poincaré map from features
 - Sample `n_trials` indices (without replacement)
